@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>白花嘉麗媽記帳APP</title>
+  <title>白花嘉麗媽記帳APP (GitHub版)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -29,7 +29,7 @@
   <script type="text/babel">
     // ==========================================
     // 請將您的 Google Apps Script 網址貼在下方引號中
-    // 例如: "https://script.google.com/macros/s/AKfycbx.../exec"
+    // ==========================================
     const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQcuqkmZhXQHpJDGUOoOxWQhZXS_NhPAD0Trl7lGz4cbLJio9VasesWnjv2yTYqs_bfQ/exec"; 
     // ==========================================
 
@@ -109,33 +109,20 @@
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       });
-      const [showHelp, setShowHelp] = useState(false);
-      
-      const [settings, setSettings] = useState(() => {
-        const saved = localStorage.getItem('budget-settings-v5');
-        return saved ? JSON.parse(saved) : { 
-          apiKey: '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', 
-          provider: 'openai', 
-          model: 'gpt-5-mini' 
-        };
-      });
       
       const [input, setInput] = useState('');
       const [isProcessing, setIsProcessing] = useState(false);
-      const [showSettings, setShowSettings] = useState(false);
       const [isEditing, setIsEditing] = useState(false);
       const [lastLog, setLastLog] = useState(null);
 
-      useEffect(() => { localStorage.setItem('budget-settings-v5', JSON.stringify(settings)); }, [settings]);
       useEffect(() => { loadDataFromCloud(currentMonth); }, [currentMonth]);
 
-      // --- Cloud API Wrapper (Replaces google.script.run with fetch) ---
+      // --- Cloud API Wrapper ---
       const callBackend = async (action, payload = {}) => {
           if (!GOOGLE_SCRIPT_URL) throw new Error("請在程式碼中設定 Google Script URL");
           
           const body = JSON.stringify({ action, ...payload });
           
-          // Use fetch with text/plain to avoid CORS Preflight (Simple Request)
           const response = await fetch(GOOGLE_SCRIPT_URL, {
               method: 'POST',
               mode: 'cors', 
@@ -197,24 +184,26 @@
         }
       };
 
+      // 核心修改：不再於前端呼叫 OpenAI，改呼叫後端 API
       const processInput = async (e) => {
         e.preventDefault();
         if (!input.trim() || isProcessing) return;
         setIsProcessing(true); setLastLog(null);
 
         try {
-          if (!settings.apiKey) throw new Error("請先設定 API Key");
+          // 呼叫後端 GAS 進行 AI 分析
+          const currentDate = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+          const result = await callBackend('analyze', { 
+             text: input, 
+             categories: categories,
+             currentDate: currentDate 
+          });
 
-          let result;
-          if (settings.provider === 'openai') {
-            result = await analyzeWithOpenAI(input);
-          } else {
-            result = await analyzeWithGemini(input);
+          if (!result || !result.data || !result.data.transactions || result.data.transactions.length === 0) {
+             throw new Error("無法辨識任何交易");
           }
 
-          if (!result || !result.transactions || result.transactions.length === 0) throw new Error("無法辨識任何交易");
-
-          const transactions = result.transactions;
+          const transactions = result.data.transactions;
           let newHistoryItems = [];
           let updatedCategories = [...categories];
           let createdOther = false;
@@ -296,54 +285,12 @@
         }
       };
 
-      const getPrompt = (text) => {
-        const now = new Date();
-        const todayStr = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}`;
-        const dayOfWeek = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
-
-        return `
-        Current Date: ${todayStr} (星期${dayOfWeek})
-        User Input: "${text}"
-        Categories: ${categories.map(c => `${c.id}:${c.name}`).join(', ')}
-        
-        Task: Extract ALL transactions from the text.
-        For each transaction identify:
-        1. item (noun)
-        2. amount (number)
-        3. categoryId (match best fit ID. If NO fit, set to "OTHER")
-        4. date (Format: YYYY/MM/DD, inferred from context like "yesterday", "morning" implies today, etc. Default to Current Date).
-           
-        Return JSON: { "transactions": [ { "amount": number, "categoryId": "id", "item": "string", "date": "YYYY/MM/DD" }, ... ] }
-      `};
-
-      const analyzeWithGemini = async (text) => {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.apiKey}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: getPrompt(text) }] }] })
-        });
-        const data = await response.json();
-        return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text.replace(/```json|```/g, '').trim());
-      };
-
-      const analyzeWithOpenAI = async (text) => {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.apiKey}` },
-          body: JSON.stringify({
-            model: 'gpt-5-mini', 
-            messages: [{ role: "user", content: getPrompt(text) + " Return JSON only." }],
-            response_format: { type: "json_object" }
-          })
-        });
-        const data = await response.json();
-        return JSON.parse(data.choices[0].message.content);
-      };
-
       const BudgetView = () => (
         <div className="space-y-3 pb-24 p-4 overflow-y-auto h-full">
           {isLoading && <div className="text-center p-2 text-amber-600 text-xs animate-pulse">正在讀取 {currentMonth} 資料...</div>}
           
           <div className="bg-amber-400 rounded-3xl p-5 text-white shadow-lg mb-6 relative overflow-hidden transition-all">
-            <button onClick={() => loadDataFromCloud(currentMonth)} className="absolute top-4 right-12 text-amber-100 hover:text-white"><Icons.Refresh /></button>
+            <button onClick={() => loadDataFromCloud(currentMonth)} className="absolute top-4 right-4 text-amber-100 hover:text-white"><Icons.Refresh /></button>
             
             <div className="flex justify-between items-center mb-2 mt-2">
                <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/10">
@@ -431,7 +378,7 @@
               {lastLog && <div className={`text-xs mb-2 px-4 py-2 rounded-xl w-fit shadow-sm max-w-full truncate border ${lastLog.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{lastLog.msg}</div>}
               <form onSubmit={processInput} className="bg-white p-2 rounded-[20px] shadow-xl border border-amber-100 flex items-center gap-2">
                 <div className="p-2 text-amber-500 animate-pulse"><Icons.Sparkles /></div>
-                <input value={input} onChange={e => setInput(e.target.value)} disabled={isProcessing || !settings.apiKey} placeholder={settings.apiKey ? "輸入: 早餐65, 捷運25..." : "請先設定 API Key..."} className="flex-1 outline-none text-gray-700 placeholder-amber-200 bg-transparent py-2" />
+                <input value={input} onChange={e => setInput(e.target.value)} disabled={isProcessing} placeholder={"輸入: 早餐65, 捷運25..."} className="flex-1 outline-none text-gray-700 placeholder-amber-200 bg-transparent py-2" />
                 <button disabled={!input || isProcessing} className="bg-amber-500 text-white p-3 rounded-2xl disabled:opacity-50 hover:bg-amber-600 transition-transform active:scale-95 shadow-md shadow-amber-200">
                   {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Icons.Send />}
                 </button>
@@ -444,29 +391,6 @@
             <button onClick={() => setView('history')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'history' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.List /> <span className="text-[10px]">紀錄</span></button>
             <button onClick={() => setView('stats')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'stats' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.PieChart /> <span className="text-[10px]">統計</span></button>
           </div>
-
-          {showSettings && (
-            <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-                <h2 className="font-bold text-lg mb-4 text-amber-900 flex items-center gap-2"><Icons.Settings /> 設定</h2>
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="text-xs font-bold text-amber-500 ml-1">AI API Key (已寫死)</label>
-                    <input type="password" value={settings.apiKey} readOnly className="w-full border-2 border-gray-100 bg-gray-50 p-2 rounded-xl outline-none text-gray-400 cursor-not-allowed" />
-                  </div>
-                  
-                  <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
-                    <label className="text-xs font-bold text-amber-500 block mb-2">AI 選擇</label>
-                    <div className="flex gap-2 mb-2">
-                      <button onClick={() => setSettings(s => ({ ...s, provider: 'gemini' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'gemini' ? 'bg-amber-400 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>Gemini</button>
-                      <button onClick={() => setSettings(s => ({ ...s, provider: 'openai' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'openai' ? 'bg-green-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>OpenAI</button>
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => setShowSettings(false)} className="w-full bg-amber-500 text-white p-3 rounded-xl font-bold shadow-lg shadow-amber-200">完成</button>
-              </div>
-            </div>
-          )}
 
         </div>
       );
