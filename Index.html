@@ -141,7 +141,8 @@
           if (cat.group) {
             if (!groups[cat.group]) groups[cat.group] = { name: cat.group, items: [], totalBudget: 0, totalSpent: 0 };
             groups[cat.group].items.push(cat);
-            groups[cat.group].totalBudget += cat.budget;
+            // 【修正】使用 (Number(cat.budget) || 0) 確保空字串不會導致計算錯誤
+            groups[cat.group].totalBudget += (Number(cat.budget) || 0);
             groups[cat.group].totalSpent += cat.spent;
           } else {
             standalone.push(cat);
@@ -216,9 +217,10 @@
                </div>
               <span className="text-amber-100 text-xs font-medium">剩餘預算</span>
             </div>
-            <div className="text-4xl font-bold mb-4 tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + (c.budget - c.spent), 0))}</div>
+            {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
+            <div className="text-4xl font-bold mb-4 tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget)||0) - c.spent), 0))}</div>
             <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5">
-              {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + x.budget, 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full" />)}
+              {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + (Number(x.budget)||0), 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full" />)}
             </div>
           </div>
           
@@ -412,7 +414,8 @@
                     <div className="flex-1">
                       <div className="flex gap-2 mb-1">
                         <input value={c.name} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, name: e.target.value } : x))} className="bg-transparent border-b border-amber-200 p-1 w-full outline-none text-amber-900 placeholder-amber-300 font-bold" placeholder="名稱" />
-                        <input type="number" value={c.budget} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, budget: Number(e.target.value) } : x))} className="bg-transparent border-b border-amber-200 p-1 w-20 text-center outline-none text-amber-900 font-mono" />
+                        {/* 【修正】輸入時允許空字串，防止刪除數字時自動跳回 0 */}
+                        <input type="number" value={c.budget} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, budget: e.target.value === '' ? '' : Number(e.target.value) } : x))} className="bg-transparent border-b border-amber-200 p-1 w-20 text-center outline-none text-amber-900 font-mono" />
                       </div>
                       <input value={c.group || ''} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, group: e.target.value } : x))} className="bg-transparent text-xs text-gray-500 p-1 w-full outline-none placeholder-gray-300" placeholder="群組 (例如: 變動費)" />
                     </div>
