@@ -365,7 +365,18 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
             const [isEditing, setIsEditing] = useState(false);
-            const [lastLog, setLastLog] = useState(null);
+            const [lastLog, setLastLogState] = useState(null);
+
+            // 覆寫 setLastLog，加上 3.5 秒後自動消失的機制
+            const setLastLog = (logObj) => {
+                setLastLogState(logObj);
+                if (logObj) {
+                    setTimeout(() => {
+                        // 檢查如果目前的 log 還是原本那一個，才把它清掉（避免清到後來新彈出的訊息）
+                        setLastLogState(prev => prev === logObj ? null : prev);
+                    }, 3500);
+                }
+            };
 
             const [settings, setSettings] = useState(() => {
                 const saved = localStorage.getItem('budget-settings-v5');
@@ -424,8 +435,9 @@
             const saveCategoriesToCloud = async (newCategories) => {
                 setCategories(newCategories);
                 try {
-                    await callBackend('saveConfig', { categories: newCategories });
-                    setLastLog({ msg: "分類設定已儲存", type: 'success' });
+                    // 將當前月份也傳送過去，讓後端可以獨立儲存
+                    await callBackend('saveConfig', { categories: newCategories, month: currentMonth });
+                    setLastLog({ msg: `${currentMonth} 的類別設定已儲存`, type: 'success' });
                 } catch (e) {
                     setLastLog({ msg: "儲存設定失敗: " + e.message, type: 'error' });
                 }
@@ -547,7 +559,10 @@
 
                         {isEditing && view === 'budget' && (
                             <div className="absolute inset-0 bg-white/95 z-10 p-4 overflow-y-auto backdrop-blur-sm">
-                                <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-amber-800">編輯類別與預算</h3><button onClick={() => { setIsEditing(false); saveCategoriesToCloud(categories); }} className="text-amber-600 font-bold bg-amber-100 px-3 py-1 rounded-full">儲存並完成</button></div>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="font-bold text-lg text-amber-800">編輯 {currentMonth} 類別與預算</h3>
+                                    <button onClick={() => { setIsEditing(false); saveCategoriesToCloud(categories); }} className="text-amber-600 font-bold bg-amber-100 px-3 py-1 rounded-full">儲存並完成</button>
+                                </div>
                                 {categories.map(c => (
                                     <div key={c.id} className="flex gap-2 mb-3 bg-amber-50 p-2 rounded-xl border border-amber-100 items-center">
                                         <div className="flex-1">
