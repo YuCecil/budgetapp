@@ -150,6 +150,24 @@
             // 優化：讓圓餅圖的區塊依據「金額大小」排序，由大至小更直覺
             const sortedData = [...data].sort((a, b) => b.value - a.value);
             const total = sortedData.reduce((sum, item) => sum + item.value, 0);
+
+            // 將佔比太小的項目合併，避免圖表擠在一起不好看
+            const threshold = total * 0.02; // < 2%
+            const displayData = [];
+            let otherValue = 0;
+
+            sortedData.forEach(item => {
+                if (item.value >= threshold) {
+                    displayData.push(item);
+                } else {
+                    otherValue += item.value;
+                }
+            });
+
+            if (otherValue > 0) {
+                displayData.push({ name: '其他小額', value: otherValue });
+            }
+
             let currentAngle = 0;
 
             if (total === 0) return <div className="text-center mt-20 text-gray-400 animate-fade-in-up"><div>本月尚無花費</div></div>;
@@ -158,15 +176,15 @@
                 <div className="flex flex-col items-center w-full max-w-xs mx-auto animate-fade-in-up">
                     <div className="relative w-64 h-64 mb-6">
                         <svg viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }} className="w-full h-full overflow-visible drop-shadow-md">
-                            {sortedData.map((item, index) => {
+                            {displayData.map((item, index) => {
                                 const percentage = item.value / total;
                                 const sliceAngle = percentage * 2 * Math.PI;
-                                if (sortedData.length === 1) return <circle key={item.name} cx="0" cy="0" r="1" fill={COLORS[index % COLORS.length]} onClick={() => setHovered(index)} />;
+                                if (displayData.length === 1) return <circle key={item.name} cx="0" cy="0" r="1" fill={COLORS[index % COLORS.length]} onClick={() => setHovered(index)} />;
                                 const x1 = Math.cos(currentAngle); const y1 = Math.sin(currentAngle);
                                 const x2 = Math.cos(currentAngle + sliceAngle); const y2 = Math.sin(currentAngle + sliceAngle);
                                 const largeArc = sliceAngle > Math.PI ? 1 : 0;
                                 const d = `M 0 0 L ${x1} ${y1} A 1 1 0 ${largeArc} 1 ${x2} ${y2} Z`;
-                                const path = <path key={item.name} d={d} fill={COLORS[index % COLORS.length]} stroke="#FFFBEB" strokeWidth="0.05" onClick={() => setHovered(index)} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)} style={{ transition: 'all 0.3s ease', opacity: hovered !== null && hovered !== index ? 0.6 : 1, transform: hovered === index ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', cursor: 'pointer' }} />;
+                                const path = <path key={item.name} d={d} fill={COLORS[index % COLORS.length]} stroke="#FFFBEB" strokeWidth="0.015" strokeLinejoin="round" onClick={() => setHovered(index)} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)} style={{ transition: 'all 0.3s ease', opacity: hovered !== null && hovered !== index ? 0.6 : 1, transform: hovered === index ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', cursor: 'pointer' }} />;
                                 currentAngle += sliceAngle;
                                 return path;
                             })}
@@ -174,15 +192,15 @@
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             {hovered !== null ? (
                                 <div className="glass-panel shadow-xl text-amber-900 text-xs p-3 rounded-xl border border-amber-100 text-center animate-bounce-slight">
-                                    <div className="font-bold text-sm mb-1">{sortedData[hovered].name}</div>
-                                    <div className="font-mono text-amber-600 font-bold text-base">${formatNumber(sortedData[hovered].value)}</div>
-                                    <div className="text-gray-400 mt-1">{Math.round(sortedData[hovered].value / total * 100)}%</div>
+                                    <div className="font-bold text-sm mb-1">{displayData[hovered].name}</div>
+                                    <div className="font-mono text-amber-600 font-bold text-base">${formatNumber(displayData[hovered].value)}</div>
+                                    <div className="text-gray-400 mt-1">{Math.round(displayData[hovered].value / total * 100)}%</div>
                                 </div>
                             ) : <div className="text-xs text-amber-700/50 font-medium flex flex-col items-center"><span>點擊區塊<br />查看明細</span></div>}
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-2 justify-center mt-2">
-                        {sortedData.map((item, index) => (
+                        {displayData.map((item, index) => (
                             <div key={item.name} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full cursor-pointer transition-colors border ${hovered === index ? 'bg-amber-100 border-amber-300' : 'bg-white border-transparent'}`} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}>
                                 <div className="w-3 h-3 rounded-full" style={{ background: COLORS[index % COLORS.length] }}></div>
                                 <span className={hovered === index ? "font-bold text-amber-900" : "text-gray-600"}>{item.name}</span>
@@ -300,18 +318,23 @@
 
                     <div className="bg-amber-400 rounded-3xl p-5 text-white shadow-lg mb-6 relative overflow-hidden transition-all animate-fade-in-up">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                        <button onClick={onRefresh} className="absolute top-4 right-4 text-amber-50 hover:text-white hover:rotate-90 transition-transform bg-white/10 p-2 rounded-full backdrop-blur-sm"><Icons.Refresh /></button>
-                        <div className="flex justify-between items-center mb-2 mt-2">
+
+                        <div className="flex justify-between items-start mb-5 relative z-10">
                             <div className="flex items-center gap-1 bg-white/20 px-2 py-1.5 rounded-xl backdrop-blur-md border border-white/20 hover:bg-white/30 transition-colors">
                                 <span className="text-amber-50 text-xs">📅</span>
                                 <input type="month" value={currentMonth} onChange={onRefresh} className="bg-transparent text-white text-sm font-bold outline-none border-none p-0 w-[110px] cursor-pointer placeholder-white" />
                             </div>
-                            <span className="text-amber-100 text-xs font-bold mr-12 tracking-wide">剩餘預算</span>
+                            <button onClick={onRefresh} className="text-amber-50 hover:text-white hover:rotate-90 transition-transform bg-white/10 p-2 rounded-full backdrop-blur-sm shadow-sm flex-shrink-0"><Icons.Refresh /></button>
                         </div>
-                        {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
-                        <div className="text-4xl font-bold mb-4 tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget) || 0) - c.spent), 0))}</div>
-                        <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5">
-                            {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + (Number(x.budget) || 0), 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full" />)}
+
+                        <div className="relative z-10">
+                            <div className="text-amber-100 text-xs font-bold mb-1 tracking-wider">本月剩餘預算</div>
+                            {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
+                            <div className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget) || 0) - c.spent), 0))}</div>
+                        </div>
+
+                        <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5 mt-4 relative z-10">
+                            {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + (Number(x.budget) || 0), 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full transition-all duration-500" />)}
                         </div>
                     </div>
 
@@ -538,7 +561,7 @@
                                         <button onClick={() => { if (confirm('刪除這個類別?')) setCategories(cats => cats.filter(x => x.id !== c.id)) }} className="text-red-400 p-2 hover:bg-red-50 rounded-full h-fit"><Icons.Trash /></button>
                                     </div>
                                 ))}
-                                <button onClick={() => setCategories([...categories, { id: Date.now().toString(), name: '新類別', budget: 1000, spent: 0, group: '' }])} className="w-full py-3 border-2 border-dashed border-amber-300 rounded-xl text-amber-400 mt-4 hover:bg-amber-50 transition-colors font-bold"><Icons.Plus /> 新增類別</button>
+                                <button onClick={() => setCategories([...categories, { id: Date.now().toString(), name: '新類別', budget: 1000, spent: 0, group: '' }])} className="w-full py-3 border-2 border-dashed border-amber-300 rounded-xl text-amber-400 mt-4 hover:bg-amber-50 transition-colors font-bold flex items-center justify-center gap-2"><Icons.Plus /> 新增類別</button>
                             </div>
                         )}
                     </div>
