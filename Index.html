@@ -327,10 +327,16 @@
                             <button onClick={onRefresh} className="text-amber-50 hover:text-white hover:rotate-90 transition-transform bg-white/10 p-2 rounded-full backdrop-blur-sm shadow-sm flex-shrink-0"><Icons.Refresh /></button>
                         </div>
 
-                        <div className="relative z-10">
-                            <div className="text-amber-100 text-xs font-bold mb-1 tracking-wider">本月剩餘預算</div>
-                            {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
-                            <div className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget) || 0) - c.spent), 0))}</div>
+                        <div className="relative z-10 flex justify-between items-end">
+                            <div>
+                                <div className="text-amber-100 text-xs font-bold mb-1 tracking-wider">本月剩餘預算</div>
+                                {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
+                                <div className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget) || 0) - c.spent), 0))}</div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-amber-100 text-xs font-bold mb-1 tracking-wider">總預算</div>
+                                <div className="text-2xl font-bold tracking-tight text-amber-50 drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + (Number(c.budget) || 0), 0))}</div>
+                            </div>
                         </div>
 
                         <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5 mt-4 relative z-10">
