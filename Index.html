@@ -2,477 +2,507 @@
 <html>
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>白花嘉麗媽記帳APP</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>白花嘉麗媽記帳APP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <style>
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .animate-spin { animation: spin 1s linear infinite; }
-    .hide-scrollbar::-webkit-scrollbar { display: none; }
-    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    body { -webkit-tap-highlight-color: transparent; }
-    
-    input[type="month"]::-webkit-calendar-picker-indicator {
-      cursor: pointer; filter: invert(1); opacity: 0.8;
-    }
-  </style>
+    <style>
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        input[type="month"]::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            filter: invert(1);
+            opacity: 0.8;
+        }
+    </style>
 </head>
 
 <body class="bg-amber-50 text-gray-800 h-screen overflow-hidden selection:bg-amber-200 font-sans">
-  <div id="root" class="h-full"></div>
+    <div id="root" class="h-full"></div>
 
-  <script type="text/babel">
-    // ==========================================
-    // 請將您的 Google Apps Script 網址貼在下方引號中
-    // ==========================================
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQcuqkmZhXQHpJDGUOoOxWQhZXS_NhPAD0Trl7lGz4cbLJio9VasesWnjv2yTYqs_bfQ/exec"; 
-    // ==========================================
+    <script type="text/babel">
+        // ==========================================
+        // 請將您的 Google Apps Script 網址貼在下方引號中
+        // ==========================================
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQcuqkmZhXQHpJDGUOoOxWQhZXS_NhPAD0Trl7lGz4cbLJio9VasesWnjv2yTYqs_bfQ/exec";
+        // ==========================================
 
-    const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
-    // --- Icons ---
-    const Icons = {
-      Home: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>,
-      List: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>,
-      PieChart: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 12 2.5 10"></path><path d="M12 12V2.5"></path><path d="M12 12 18 20"></path></svg>,
-      Send: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>,
-      Trash: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
-      Sparkles: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>,
-      Plus: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
-      Edit: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
-      Help: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
-      Copy: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>,
-      Refresh: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>,
-      Cloud: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>,
-      Folder: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-    };
-
-    const COLORS = ['#F59E0B', '#D97706', '#B45309', '#78350F', '#FCD34D', '#84CC16', '#10B981'];
-    const formatNumber = (num) => new Intl.NumberFormat('zh-TW').format(num || 0); // 防呆: 如果是 undefined 則顯示 0
-
-    // --- Components ---
-    const SimplePieChart = ({ data }) => {
-      const [hovered, setHovered] = useState(null);
-      const total = data.reduce((sum, item) => sum + item.value, 0);
-      let currentAngle = 0;
-
-      if (total === 0) return <div className="text-center mt-20 text-gray-400"><div>本月尚無花費</div></div>;
-
-      return (
-        <div className="flex flex-col items-center w-full max-w-xs mx-auto">
-          <div className="relative w-64 h-64 mb-6">
-            <svg viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }} className="w-full h-full overflow-visible drop-shadow-md">
-              {data.map((item, index) => {
-                const percentage = item.value / total;
-                const sliceAngle = percentage * 2 * Math.PI;
-                if (data.length === 1) return <circle key={item.name} cx="0" cy="0" r="1" fill={COLORS[index % COLORS.length]} onClick={() => setHovered(index)} />;
-                const x1 = Math.cos(currentAngle); const y1 = Math.sin(currentAngle);
-                const x2 = Math.cos(currentAngle + sliceAngle); const y2 = Math.sin(currentAngle + sliceAngle);
-                const largeArc = sliceAngle > Math.PI ? 1 : 0;
-                const d = `M 0 0 L ${x1} ${y1} A 1 1 0 ${largeArc} 1 ${x2} ${y2} Z`;
-                const path = <path key={item.name} d={d} fill={COLORS[index % COLORS.length]} stroke="#FFFBEB" strokeWidth="0.05" onClick={() => setHovered(index)} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)} style={{ transition: 'all 0.3s ease', opacity: hovered !== null && hovered !== index ? 0.6 : 1, transform: hovered === index ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', cursor: 'pointer' }} />;
-                currentAngle += sliceAngle;
-                return path;
-              })}
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              {hovered !== null ? (
-                <div className="bg-white/95 shadow-xl text-amber-900 text-xs p-3 rounded-xl border border-amber-100 text-center animate-pulse-once">
-                  <div className="font-bold text-sm mb-1">{data[hovered].name}</div>
-                  <div className="font-mono text-amber-600 font-bold text-base">${formatNumber(data[hovered].value)}</div>
-                  <div className="text-gray-400 mt-1">{Math.round(data[hovered].value / total * 100)}%</div>
-                </div>
-              ) : <div className="text-xs text-gray-400 font-medium flex flex-col items-center"><span>點擊查看</span></div>}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 justify-center">
-            {data.map((item, index) => (
-              <div key={item.name} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full cursor-pointer transition-colors border ${hovered === index ? 'bg-amber-100 border-amber-300' : 'bg-white border-transparent'}`} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}>
-                <div className="w-3 h-3 rounded-full" style={{ background: COLORS[index % COLORS.length] }}></div>
-                <span className={hovered === index ? "font-bold text-amber-900" : "text-gray-600"}>{item.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    };
-
-    // 獨立出來的 HistoryView，避免在 App 內部定義導致的渲染問題
-    const HistoryView = ({ history, currentMonth, onDelete }) => {
-      // 安全檢查：如果 history 不是陣列，則視為空陣列，防止當機
-      const safeHistory = Array.isArray(history) ? history : [];
-
-      return (
-        <div className="p-4 pb-24 h-full overflow-y-auto">
-          <h2 className="text-xl font-bold mb-4 px-2 text-amber-900 flex items-center gap-2"><span>📜</span> {currentMonth} 紀錄</h2>
-          {safeHistory.length === 0 ? <div className="text-center text-gray-400 mt-20 flex flex-col gap-2"><span>本月暫無紀錄</span></div> : (
-            <div className="space-y-3">
-              {safeHistory.map(record => (
-                <div key={record.id || Math.random()} className="bg-white p-4 rounded-2xl shadow-sm border border-amber-50 flex justify-between items-center group">
-                  <div>
-                    <div className="font-bold text-gray-800 flex items-center gap-2">{record.item}</div>
-                    <div className="text-xs text-amber-500 font-medium">{record.date}</div>
-                    <div className="text-xs text-gray-400">{record.categoryName}</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-lg text-gray-800">${formatNumber(record.amount)}</span>
-                    <button onClick={() => onDelete(record)} className="text-gray-200 hover:text-red-400 p-2 transition-colors"><Icons.Trash /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    // 獨立出來的 BudgetView
-    const BudgetView = ({ categories, currentMonth, isLoading, onRefresh, onEdit, onUpdateCategory, onDeleteCategory, onAddCategory }) => {
-      const renderCategories = () => {
-        const groups = {};
-        const standalone = [];
-
-        categories.forEach(cat => {
-          if (cat.group) {
-            if (!groups[cat.group]) groups[cat.group] = { name: cat.group, items: [], totalBudget: 0, totalSpent: 0 };
-            groups[cat.group].items.push(cat);
-            // 【修正】使用 (Number(cat.budget) || 0) 確保空字串不會導致計算錯誤
-            groups[cat.group].totalBudget += (Number(cat.budget) || 0);
-            groups[cat.group].totalSpent += cat.spent;
-          } else {
-            standalone.push(cat);
-          }
-        });
-
-        const elements = [];
-
-        Object.values(groups).forEach(group => {
-          const remaining = group.totalBudget - group.totalSpent;
-          elements.push(
-            <div key={`group-${group.name}`} className="mb-4 bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
-              <div className="bg-amber-50 p-3 flex justify-between items-center border-b border-amber-100">
-                <div className="flex items-center gap-2">
-                  <div className="text-amber-500"><Icons.Folder /></div>
-                  <div className="font-bold text-amber-900">{group.name}</div>
-                </div>
-                <div className="text-right">
-                  <span className={`font-bold ${remaining < 0 ? 'text-red-500' : 'text-amber-700'}`}>${formatNumber(remaining)}</span>
-                  <span className="text-xs text-amber-400 ml-1">/ ${formatNumber(group.totalBudget)}</span>
-                </div>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {group.items.map((item, idx) => (
-                  <div key={item.id} className="p-3 pl-6 flex justify-between items-center bg-white hover:bg-gray-50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full" style={{ background: COLORS[idx % COLORS.length] }}></div>
-                      <div>
-                        <div className="font-medium text-gray-700 text-sm">{item.name}</div>
-                        {/* 這裡不再顯示預算，只顯示花費 */}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs text-gray-400 mr-1">花費</span>
-                      <span className="font-bold text-gray-700">${formatNumber(item.spent)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        });
-
-        standalone.forEach((item, idx) => {
-          const remaining = item.budget - item.spent;
-          elements.push(
-            <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-amber-100 flex justify-between items-center relative overflow-hidden mb-3">
-              <div className={`absolute left-0 top-0 bottom-0 w-1`} style={{ background: COLORS[idx % COLORS.length] }}></div>
-              <div className="flex items-center gap-3 pl-2">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm" style={{ background: COLORS[idx % COLORS.length] }}>{item.name[0]}</div>
-                <div><div className="font-bold text-gray-800">{item.name}</div><div className="text-xs text-gray-400">已花 ${formatNumber(item.spent)}</div></div>
-              </div>
-              <div className="text-right"><div className={`font-bold text-lg ${remaining < 0 ? 'text-red-500' : 'text-gray-800'}`}>${formatNumber(remaining)}</div><div className="text-xs text-gray-400">/ ${formatNumber(item.budget)}</div></div>
-            </div>
-          );
-        });
-
-        return elements;
-      };
-
-      return (
-        <div className="space-y-3 pb-24 p-4 overflow-y-auto h-full">
-          {isLoading && <div className="text-center p-2 text-amber-600 text-xs animate-pulse">正在讀取 {currentMonth} 資料...</div>}
-          
-          <div className="bg-amber-400 rounded-3xl p-5 text-white shadow-lg mb-6 relative overflow-hidden transition-all">
-            <button onClick={onRefresh} className="absolute top-4 right-12 text-amber-100 hover:text-white"><Icons.Refresh /></button>
-            <div className="flex justify-between items-center mb-2 mt-2">
-               <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/10">
-                 <span className="text-amber-50 text-xs">📅</span>
-                 {/* 透過 App 元件的狀態傳遞修改月份 */}
-                 <input type="month" value={currentMonth} onChange={onRefresh} className="bg-transparent text-white text-sm font-bold outline-none border-none p-0 w-32 cursor-pointer placeholder-white" />
-               </div>
-              <span className="text-amber-100 text-xs font-medium">剩餘預算</span>
-            </div>
-            {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
-            <div className="text-4xl font-bold mb-4 tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget)||0) - c.spent), 0))}</div>
-            <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5">
-              {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + (Number(x.budget)||0), 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full" />)}
-            </div>
-          </div>
-          
-          {renderCategories()}
-          
-          <div className="text-center pt-4 pb-8"><button onClick={onEdit} className="text-amber-400 text-sm flex items-center justify-center gap-1 mx-auto hover:text-amber-600 transition-colors"><Icons.Edit /> 編輯類別 / 預算</button></div>
-        </div>
-      );
-    };
-
-    function App() {
-      const [view, setView] = useState('budget'); 
-      const [isLoading, setIsLoading] = useState(false);
-      const [categories, setCategories] = useState([]);
-      const [history, setHistory] = useState([]); // 初始化為空陣列
-      const [currentMonth, setCurrentMonth] = useState(() => {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      });
-      
-      const [input, setInput] = useState('');
-      const [isProcessing, setIsProcessing] = useState(false);
-      const [showSettings, setShowSettings] = useState(false);
-      const [isEditing, setIsEditing] = useState(false);
-      const [lastLog, setLastLog] = useState(null);
-
-      const [settings, setSettings] = useState(() => {
-        const saved = localStorage.getItem('budget-settings-v5');
-        return saved ? JSON.parse(saved) : { 
-          apiKey: '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', 
-          provider: 'openai', 
-          model: 'gpt-5-mini' 
+        // --- Icons ---
+        const Icons = {
+            Home: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>,
+            List: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>,
+            PieChart: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 12 2.5 10"></path><path d="M12 12V2.5"></path><path d="M12 12 18 20"></path></svg>,
+            Send: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>,
+            Trash: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
+            Sparkles: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>,
+            Plus: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+            Edit: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+            Help: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
+            Copy: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>,
+            Refresh: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>,
+            Cloud: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>,
+            Folder: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
         };
-      });
 
-      useEffect(() => { localStorage.setItem('budget-settings-v5', JSON.stringify(settings)); }, [settings]);
-      useEffect(() => { loadDataFromCloud(currentMonth); }, [currentMonth]);
+        const COLORS = ['#F59E0B', '#D97706', '#B45309', '#78350F', '#FCD34D', '#84CC16', '#10B981'];
+        const formatNumber = (num) => new Intl.NumberFormat('zh-TW').format(num || 0); // 防呆: 如果是 undefined 則顯示 0
 
-      // --- Cloud API Wrapper ---
-      const callBackend = async (action, payload = {}) => {
-          if (!GOOGLE_SCRIPT_URL) throw new Error("請在程式碼中設定 Google Script URL");
-          const body = JSON.stringify({ action, ...payload });
-          const response = await fetch(GOOGLE_SCRIPT_URL, {
-              method: 'POST', mode: 'cors', redirect: 'follow',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: body
-          });
-          if (!response.ok) throw new Error("網路連線錯誤");
-          const json = await response.json();
-          if(json.status === 'error') throw new Error(json.message || "Unknown API Error");
-          return json;
-      };
+        // --- Components ---
+        const SimplePieChart = ({ data }) => {
+            const [hovered, setHovered] = useState(null);
+            const total = data.reduce((sum, item) => sum + item.value, 0);
+            let currentAngle = 0;
 
-      const loadDataFromCloud = async (monthToLoad) => {
-        setIsLoading(true);
-        try {
-            const data = await callBackend('getData', { month: monthToLoad });
-            if (data) {
-                setCategories(data.categories || []);
-                setHistory(data.history || []); // 強制給予空陣列，防止 undefined
-                setLastLog({ msg: `已讀取 ${monthToLoad} 資料`, type: 'success' });
-            }
-        } catch (err) {
-            console.error(err);
-            setLastLog({ msg: "讀取失敗: " + err.message, type: 'error' });
-        } finally {
-            setIsLoading(false);
-        }
-      };
+            if (total === 0) return <div className="text-center mt-20 text-gray-400"><div>本月尚無花費</div></div>;
 
-      const handleMonthChange = (e) => {
-        // 當使用者在 BudgetView 更改月份時，或是點擊 refresh
-        const val = e.target ? e.target.value : currentMonth; // 如果是 event 就取 value，否則就是 refresh
-        setCurrentMonth(val);
-        // loadDataFromCloud 會由 useEffect 觸發
-      };
-
-      const saveCategoriesToCloud = async (newCategories) => {
-         setCategories(newCategories); 
-         try {
-             await callBackend('saveConfig', { categories: newCategories });
-             setLastLog({msg: "分類設定已儲存", type: 'success'});
-         } catch(e) {
-             setLastLog({ msg: "儲存設定失敗: " + e.message, type: 'error' });
-         }
-      };
-
-      const deleteTransaction = async (record) => {
-        if (!confirm(`確定要刪除「${record.item} $${record.amount}」嗎？`)) return;
-        const targetCat = categories.find(c => c.id === record.categoryId);
-        if(targetCat) {
-             const newCats = categories.map(c => c.id === record.categoryId ? { ...c, spent: c.spent - record.amount } : c);
-             setCategories(newCats);
-        }
-        setHistory(prev => prev.filter(r => r.id !== record.id));
-        try {
-            const res = await callBackend('deleteData', { id: record.id });
-            if(res.status === 'deleted') setLastLog({ msg: "刪除成功", type: 'success' });
-        } catch(e) { setLastLog({ msg: "刪除失敗: " + e.message, type: 'error' }); }
-      };
-
-      const processInput = async (e) => {
-        e.preventDefault();
-        if (!input.trim() || isProcessing) return;
-        setIsProcessing(true); setLastLog(null);
-
-        try {
-          const currentDate = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-          const result = await callBackend('analyze', { text: input, categories: categories, currentDate: currentDate });
-
-          if (!result || !result.data || !result.data.transactions || result.data.transactions.length === 0) {
-             throw new Error("無法辨識任何交易");
-          }
-
-          const transactions = result.data.transactions;
-          let newHistoryItems = [];
-          let updatedCategories = [...categories];
-          let hasNewCategory = false;
-
-          const needsOther = transactions.some(t => t.categoryId === 'OTHER' || !updatedCategories.find(c => c.id === t.categoryId));
-          let otherCategory = updatedCategories.find(c => c.name === '其他');
-
-          if (needsOther && !otherCategory) {
-            otherCategory = { id: Date.now().toString(), name: '其他', budget: 0, spent: 0, group: '' };
-            updatedCategories.push(otherCategory);
-            hasNewCategory = true;
-          }
-
-          for (const tx of transactions) {
-            let targetCat = updatedCategories.find(c => c.id === tx.categoryId);
-            if (!targetCat) targetCat = updatedCategories.find(c => c.name.includes(tx.item));
-            if (!targetCat && otherCategory) targetCat = otherCategory;
-            if (!targetCat) continue;
-
-            targetCat.spent += tx.amount;
-
-            const txDate = tx.date || new Date().toISOString().split('T')[0];
-            const recordId = Math.random().toString(36).substr(2, 9) + Date.now().toString();
-            const txDateNormalized = txDate.replace(/\//g, '-');
-            
-            if (txDateNormalized.startsWith(currentMonth)) {
-                const displayDate = txDate.replace(/-/g, '/');
-                newHistoryItems.push({
-                  id: recordId, date: displayDate, rawDate: txDate, month: currentMonth,
-                  item: tx.item, amount: tx.amount, categoryId: targetCat.id, categoryName: targetCat.name, note: ''
-                });
-            }
-
-            const txMonth = txDate.slice(0, 7); 
-            callBackend('addData', { date: txDate, month: txMonth, category: targetCat.name, item: tx.item, amount: tx.amount, note: '', id: recordId }).catch(e => setLastLog({msg: "同步失敗: "+e.message, type: 'error'}));
-          }
-
-          setCategories(updatedCategories);
-          setHistory(prev => [...newHistoryItems, ...prev].slice(0, 100));
-          if(hasNewCategory) saveCategoriesToCloud(updatedCategories);
-
-          const totalAmount = transactions.reduce((acc, cur) => acc + cur.amount, 0);
-          setLastLog({ msg: `記帳成功！共 ${transactions.length} 筆 ($${totalAmount})`, type: 'success' });
-          setInput('');
-
-        } catch (error) {
-          console.error(error);
-          setLastLog({ msg: error.message || "發生錯誤", type: 'error' });
-        } finally {
-          setIsProcessing(false);
-        }
-      };
-
-      return (
-        <div className="flex flex-col h-full bg-amber-50 max-w-md mx-auto shadow-2xl relative">
-          <div className="flex-1 overflow-hidden relative">
-            {view === 'budget' && <BudgetView 
-                categories={categories} 
-                currentMonth={currentMonth} 
-                isLoading={isLoading} 
-                onRefresh={handleMonthChange}
-                onEdit={() => setIsEditing(true)}
-            />}
-            {view === 'history' && <HistoryView 
-                history={history} 
-                currentMonth={currentMonth} 
-                onDelete={deleteTransaction}
-            />}
-            {view === 'stats' && <div className="p-4 h-full flex flex-col items-center"><h2 className="text-xl font-bold mb-4 w-full px-2 text-amber-900 flex items-center gap-2"><span>📊</span> {currentMonth} 統計</h2><SimplePieChart data={categories.filter(c => c.spent > 0).map(c => ({ name: c.name, value: c.spent }))} /></div>}
-
-            {isEditing && view === 'budget' && (
-              <div className="absolute inset-0 bg-white/95 z-10 p-4 overflow-y-auto backdrop-blur-sm">
-                <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-amber-800">編輯類別與預算</h3><button onClick={() => { setIsEditing(false); saveCategoriesToCloud(categories); }} className="text-amber-600 font-bold bg-amber-100 px-3 py-1 rounded-full">儲存並完成</button></div>
-                {categories.map(c => (
-                  <div key={c.id} className="flex gap-2 mb-3 bg-amber-50 p-2 rounded-xl border border-amber-100 items-center">
-                    <div className="flex-1">
-                      <div className="flex gap-2 mb-1">
-                        <input value={c.name} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, name: e.target.value } : x))} className="bg-transparent border-b border-amber-200 p-1 w-full outline-none text-amber-900 placeholder-amber-300 font-bold" placeholder="名稱" />
-                        {/* 【修正】輸入時允許空字串，防止刪除數字時自動跳回 0 */}
-                        <input type="number" value={c.budget} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, budget: e.target.value === '' ? '' : Number(e.target.value) } : x))} className="bg-transparent border-b border-amber-200 p-1 w-20 text-center outline-none text-amber-900 font-mono" />
-                      </div>
-                      <input value={c.group || ''} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, group: e.target.value } : x))} className="bg-transparent text-xs text-gray-500 p-1 w-full outline-none placeholder-gray-300" placeholder="群組 (例如: 變動費)" />
+            return (
+                <div className="flex flex-col items-center w-full max-w-xs mx-auto">
+                    <div className="relative w-64 h-64 mb-6">
+                        <svg viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }} className="w-full h-full overflow-visible drop-shadow-md">
+                            {data.map((item, index) => {
+                                const percentage = item.value / total;
+                                const sliceAngle = percentage * 2 * Math.PI;
+                                if (data.length === 1) return <circle key={item.name} cx="0" cy="0" r="1" fill={COLORS[index % COLORS.length]} onClick={() => setHovered(index)} />;
+                                const x1 = Math.cos(currentAngle); const y1 = Math.sin(currentAngle);
+                                const x2 = Math.cos(currentAngle + sliceAngle); const y2 = Math.sin(currentAngle + sliceAngle);
+                                const largeArc = sliceAngle > Math.PI ? 1 : 0;
+                                const d = `M 0 0 L ${x1} ${y1} A 1 1 0 ${largeArc} 1 ${x2} ${y2} Z`;
+                                const path = <path key={item.name} d={d} fill={COLORS[index % COLORS.length]} stroke="#FFFBEB" strokeWidth="0.05" onClick={() => setHovered(index)} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)} style={{ transition: 'all 0.3s ease', opacity: hovered !== null && hovered !== index ? 0.6 : 1, transform: hovered === index ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', cursor: 'pointer' }} />;
+                                currentAngle += sliceAngle;
+                                return path;
+                            })}
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            {hovered !== null ? (
+                                <div className="bg-white/95 shadow-xl text-amber-900 text-xs p-3 rounded-xl border border-amber-100 text-center animate-pulse-once">
+                                    <div className="font-bold text-sm mb-1">{data[hovered].name}</div>
+                                    <div className="font-mono text-amber-600 font-bold text-base">${formatNumber(data[hovered].value)}</div>
+                                    <div className="text-gray-400 mt-1">{Math.round(data[hovered].value / total * 100)}%</div>
+                                </div>
+                            ) : <div className="text-xs text-gray-400 font-medium flex flex-col items-center"><span>點擊查看</span></div>}
+                        </div>
                     </div>
-                    <button onClick={() => { if (confirm('刪除這個類別?')) setCategories(cats => cats.filter(x => x.id !== c.id)) }} className="text-red-400 p-2 hover:bg-red-50 rounded-full h-fit"><Icons.Trash /></button>
-                  </div>
-                ))}
-                <button onClick={() => setCategories([...categories, { id: Date.now().toString(), name: '新類別', budget: 1000, spent: 0, group: '' }])} className="w-full py-3 border-2 border-dashed border-amber-300 rounded-xl text-amber-400 mt-4 hover:bg-amber-50 transition-colors font-bold"><Icons.Plus /> 新增類別</button>
-              </div>
-            )}
-          </div>
-
-          {view === 'budget' && !isEditing && (
-            <div className="absolute bottom-20 left-0 right-0 px-4">
-              {lastLog && <div className={`text-xs mb-2 px-4 py-2 rounded-xl w-fit shadow-sm max-w-full truncate border ${lastLog.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{lastLog.msg}</div>}
-              <form onSubmit={processInput} className="bg-white p-2 rounded-[20px] shadow-xl border border-amber-100 flex items-center gap-2">
-                <div className="p-2 text-amber-500 animate-pulse"><Icons.Sparkles /></div>
-                <input value={input} onChange={e => setInput(e.target.value)} disabled={isProcessing} placeholder={"輸入: 早餐65, 捷運25..."} className="flex-1 outline-none text-gray-700 placeholder-amber-200 bg-transparent py-2" />
-                <button disabled={!input || isProcessing} className="bg-amber-500 text-white p-3 rounded-2xl disabled:opacity-50 hover:bg-amber-600 transition-transform active:scale-95 shadow-md shadow-amber-200">
-                  {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Icons.Send />}
-                </button>
-              </form>
-            </div>
-          )}
-
-          <div className="bg-white border-t border-amber-100 p-2 flex justify-around items-center z-20 pb-safe">
-            <button onClick={() => setView('budget')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'budget' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.Home /> <span className="text-[10px]">記帳</span></button>
-            <button onClick={() => setView('history')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'history' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.List /> <span className="text-[10px]">紀錄</span></button>
-            <button onClick={() => setView('stats')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'stats' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.PieChart /> <span className="text-[10px]">統計</span></button>
-          </div>
-
-          {showSettings && (
-            <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-                <h2 className="font-bold text-lg mb-4 text-amber-900 flex items-center gap-2"><Icons.Settings /> 設定</h2>
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="text-xs font-bold text-amber-500 ml-1">AI API Key (已寫死)</label>
-                    <input type="password" value={settings.apiKey} readOnly className="w-full border-2 border-gray-100 bg-gray-50 p-2 rounded-xl outline-none text-gray-400 cursor-not-allowed" />
-                  </div>
-                  
-                  <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
-                    <label className="text-xs font-bold text-amber-500 block mb-2">AI 選擇</label>
-                    <div className="flex gap-2 mb-2">
-                      <button onClick={() => setSettings(s => ({ ...s, provider: 'gemini' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'gemini' ? 'bg-amber-400 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>Gemini</button>
-                      <button onClick={() => setSettings(s => ({ ...s, provider: 'openai' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'openai' ? 'bg-green-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>OpenAI</button>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                        {data.map((item, index) => (
+                            <div key={item.name} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full cursor-pointer transition-colors border ${hovered === index ? 'bg-amber-100 border-amber-300' : 'bg-white border-transparent'}`} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}>
+                                <div className="w-3 h-3 rounded-full" style={{ background: COLORS[index % COLORS.length] }}></div>
+                                <span className={hovered === index ? "font-bold text-amber-900" : "text-gray-600"}>{item.name}</span>
+                            </div>
+                        ))}
                     </div>
-                  </div>
                 </div>
-                <button onClick={() => setShowSettings(false)} className="w-full bg-amber-500 text-white p-3 rounded-xl font-bold shadow-lg shadow-amber-200">完成</button>
-              </div>
-            </div>
-          )}
+            );
+        };
 
-        </div>
-      );
-    }
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-  </script>
+        // 獨立出來的 HistoryView，避免在 App 內部定義導致的渲染問題
+        const HistoryView = ({ history, currentMonth, onDelete }) => {
+            // 安全檢查：如果 history 不是陣列，則視為空陣列，防止當機
+            const safeHistory = Array.isArray(history) ? history : [];
+
+            return (
+                <div className="p-4 pb-24 h-full overflow-y-auto">
+                    <h2 className="text-xl font-bold mb-4 px-2 text-amber-900 flex items-center gap-2"><span>📜</span> {currentMonth} 紀錄</h2>
+                    {safeHistory.length === 0 ? <div className="text-center text-gray-400 mt-20 flex flex-col gap-2"><span>本月暫無紀錄</span></div> : (
+                        <div className="space-y-3">
+                            {safeHistory.map(record => (
+                                <div key={record.id || Math.random()} className="bg-white p-4 rounded-2xl shadow-sm border border-amber-50 flex justify-between items-center group">
+                                    <div>
+                                        <div className="font-bold text-gray-800 flex items-center gap-2">{record.item}</div>
+                                        <div className="text-xs text-amber-500 font-medium">{record.date}</div>
+                                        <div className="text-xs text-gray-400">{record.categoryName}</div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="font-bold text-lg text-gray-800">${formatNumber(record.amount)}</span>
+                                        <button onClick={() => onDelete(record)} className="text-gray-200 hover:text-red-400 p-2 transition-colors"><Icons.Trash /></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // 獨立出來的 BudgetView
+        const BudgetView = ({ categories, currentMonth, isLoading, onRefresh, onEdit, onUpdateCategory, onDeleteCategory, onAddCategory }) => {
+            const renderCategories = () => {
+                const groups = {};
+                const standalone = [];
+
+                categories.forEach(cat => {
+                    if (cat.group) {
+                        if (!groups[cat.group]) groups[cat.group] = { name: cat.group, items: [], totalBudget: 0, totalSpent: 0 };
+                        groups[cat.group].items.push(cat);
+                        // 【修正】使用 (Number(cat.budget) || 0) 確保空字串不會導致計算錯誤
+                        groups[cat.group].totalBudget += (Number(cat.budget) || 0);
+                        groups[cat.group].totalSpent += cat.spent;
+                    } else {
+                        standalone.push(cat);
+                    }
+                });
+
+                const elements = [];
+
+                Object.values(groups).forEach(group => {
+                    const remaining = group.totalBudget - group.totalSpent;
+                    elements.push(
+                        <div key={`group-${group.name}`} className="mb-4 bg-white rounded-2xl shadow-sm border border-amber-200 overflow-hidden">
+                            <div className="bg-amber-50 p-3 flex justify-between items-center border-b border-amber-100">
+                                <div className="flex items-center gap-2">
+                                    <div className="text-amber-500"><Icons.Folder /></div>
+                                    <div className="font-bold text-amber-900">{group.name}</div>
+                                </div>
+                                <div className="text-right">
+                                    <span className={`font-bold ${remaining < 0 ? 'text-red-500' : 'text-amber-700'}`}>${formatNumber(remaining)}</span>
+                                    <span className="text-xs text-amber-400 ml-1">/ ${formatNumber(group.totalBudget)}</span>
+                                </div>
+                            </div>
+                            <div className="divide-y divide-gray-100">
+                                {group.items.map((item, idx) => (
+                                    <div key={item.id} className="p-3 pl-6 flex justify-between items-center bg-white hover:bg-gray-50 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-2 h-2 rounded-full" style={{ background: COLORS[idx % COLORS.length] }}></div>
+                                            <div>
+                                                <div className="font-medium text-gray-700 text-sm">{item.name}</div>
+                                                {/* 這裡不再顯示預算，只顯示花費 */}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-xs text-gray-400 mr-1">花費</span>
+                                            <span className="font-bold text-gray-700">${formatNumber(item.spent)}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                });
+
+                standalone.forEach((item, idx) => {
+                    const remaining = item.budget - item.spent;
+                    elements.push(
+                        <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-amber-100 flex justify-between items-center relative overflow-hidden mb-3">
+                            <div className={`absolute left-0 top-0 bottom-0 w-1`} style={{ background: COLORS[idx % COLORS.length] }}></div>
+                            <div className="flex items-center gap-3 pl-2">
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm" style={{ background: COLORS[idx % COLORS.length] }}>{item.name[0]}</div>
+                                <div><div className="font-bold text-gray-800">{item.name}</div><div className="text-xs text-gray-400">已花 ${formatNumber(item.spent)}</div></div>
+                            </div>
+                            <div className="text-right"><div className={`font-bold text-lg ${remaining < 0 ? 'text-red-500' : 'text-gray-800'}`}>${formatNumber(remaining)}</div><div className="text-xs text-gray-400">/ ${formatNumber(item.budget)}</div></div>
+                        </div>
+                    );
+                });
+
+                return elements;
+            };
+
+            return (
+                <div className="space-y-3 pb-24 p-4 overflow-y-auto h-full">
+                    {isLoading && <div className="text-center p-2 text-amber-600 text-xs animate-pulse">正在讀取 {currentMonth} 資料...</div>}
+
+                    <div className="bg-amber-400 rounded-3xl p-5 text-white shadow-lg mb-6 relative overflow-hidden transition-all">
+                        <button onClick={onRefresh} className="absolute top-4 right-12 text-amber-100 hover:text-white"><Icons.Refresh /></button>
+                        <div className="flex justify-between items-center mb-2 mt-2">
+                            <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/10">
+                                <span className="text-amber-50 text-xs">📅</span>
+                                {/* 透過 App 元件的狀態傳遞修改月份 */}
+                                <input type="month" value={currentMonth} onChange={onRefresh} className="bg-transparent text-white text-sm font-bold outline-none border-none p-0 w-32 cursor-pointer placeholder-white" />
+                            </div>
+                            <span className="text-amber-100 text-xs font-medium">剩餘預算</span>
+                        </div>
+                        {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
+                        <div className="text-4xl font-bold mb-4 tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget) || 0) - c.spent), 0))}</div>
+                        <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5">
+                            {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + (Number(x.budget) || 0), 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full" />)}
+                        </div>
+                    </div>
+
+                    {renderCategories()}
+
+                    <div className="text-center pt-4 pb-8">
+                        {isLoading ? (
+                            <span className="text-gray-400 text-sm flex items-center justify-center gap-1 mx-auto">資料載入中...</span>
+                        ) : (
+                            <button onClick={onEdit} className="text-amber-400 text-sm flex items-center justify-center gap-1 mx-auto hover:text-amber-600 transition-colors"><Icons.Edit /> 編輯類別 / 預算</button>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            const [view, setView] = useState('budget');
+            const [isLoading, setIsLoading] = useState(false);
+            const [categories, setCategories] = useState([]);
+            const [history, setHistory] = useState([]); // 初始化為空陣列
+            const [currentMonth, setCurrentMonth] = useState(() => {
+                const now = new Date();
+                return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            });
+
+            const [input, setInput] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
+            const [isEditing, setIsEditing] = useState(false);
+            const [lastLog, setLastLog] = useState(null);
+
+            const [settings, setSettings] = useState(() => {
+                const saved = localStorage.getItem('budget-settings-v5');
+                return saved ? JSON.parse(saved) : {
+                    apiKey: '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',
+                    provider: 'openai',
+                    model: 'gpt-5-mini'
+                };
+            });
+
+            useEffect(() => { localStorage.setItem('budget-settings-v5', JSON.stringify(settings)); }, [settings]);
+            useEffect(() => { loadDataFromCloud(currentMonth); }, [currentMonth]);
+
+            // --- Cloud API Wrapper ---
+            const callBackend = async (action, payload = {}) => {
+                if (!GOOGLE_SCRIPT_URL) throw new Error("請在程式碼中設定 Google Script URL");
+                const body = JSON.stringify({ action, ...payload });
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST', mode: 'cors', redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: body
+                });
+                if (!response.ok) throw new Error("網路連線錯誤");
+                const json = await response.json();
+                if (json.status === 'error') throw new Error(json.message || "Unknown API Error");
+                return json;
+            };
+
+            const loadDataFromCloud = async (monthToLoad) => {
+                setIsLoading(true);
+                try {
+                    const data = await callBackend('getData', { month: monthToLoad });
+                    if (data) {
+                        setCategories(data.categories || []);
+                        setHistory(data.history || []); // 強制給予空陣列，防止 undefined
+                        setLastLog({ msg: `已讀取 ${monthToLoad} 資料`, type: 'success' });
+                    }
+                } catch (err) {
+                    console.error(err);
+                    setLastLog({ msg: "讀取失敗: " + err.message, type: 'error' });
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleMonthChange = (e) => {
+                // 當使用者在 BudgetView 更改月份時，或是點擊 refresh
+                const val = e.target ? e.target.value : currentMonth; // 如果是 event 就取 value，否則就是 refresh
+                setCurrentMonth(val);
+                // loadDataFromCloud 會由 useEffect 觸發
+            };
+
+            const saveCategoriesToCloud = async (newCategories) => {
+                setCategories(newCategories);
+                try {
+                    await callBackend('saveConfig', { categories: newCategories });
+                    setLastLog({ msg: "分類設定已儲存", type: 'success' });
+                } catch (e) {
+                    setLastLog({ msg: "儲存設定失敗: " + e.message, type: 'error' });
+                }
+            };
+
+            const deleteTransaction = async (record) => {
+                if (!confirm(`確定要刪除「${record.item} $${record.amount}」嗎？`)) return;
+                const targetCat = categories.find(c => c.id === record.categoryId);
+                if (targetCat) {
+                    const newCats = categories.map(c => c.id === record.categoryId ? { ...c, spent: c.spent - record.amount } : c);
+                    setCategories(newCats);
+                }
+                setHistory(prev => prev.filter(r => r.id !== record.id));
+                try {
+                    const res = await callBackend('deleteData', { id: record.id });
+                    if (res.status === 'deleted') setLastLog({ msg: "刪除成功", type: 'success' });
+                } catch (e) { setLastLog({ msg: "刪除失敗: " + e.message, type: 'error' }); }
+            };
+
+            const processInput = async (e) => {
+                e.preventDefault();
+                if (!input.trim() || isProcessing || isLoading) return;
+                setIsProcessing(true); setLastLog(null);
+
+                try {
+                    const currentDate = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+                    const result = await callBackend('analyze', { text: input, categories: categories, currentDate: currentDate });
+
+                    if (!result || !result.data || !result.data.transactions || result.data.transactions.length === 0) {
+                        throw new Error("無法辨識任何交易");
+                    }
+
+                    const transactions = result.data.transactions;
+                    let newHistoryItems = [];
+                    let updatedCategories = [...categories];
+                    let hasNewCategory = false;
+
+                    const needsOther = transactions.some(t => t.categoryId === 'OTHER' || !updatedCategories.find(c => c.id === t.categoryId));
+                    let otherCategory = updatedCategories.find(c => c.name === '其他');
+
+                    if (needsOther && !otherCategory) {
+                        otherCategory = { id: Date.now().toString(), name: '其他', budget: 0, spent: 0, group: '' };
+                        updatedCategories.push(otherCategory);
+                        hasNewCategory = true;
+                    }
+
+                    for (const tx of transactions) {
+                        let targetCat = updatedCategories.find(c => c.id === tx.categoryId);
+                        if (!targetCat) targetCat = updatedCategories.find(c => c.name.includes(tx.item));
+                        if (!targetCat && otherCategory) targetCat = otherCategory;
+                        if (!targetCat) continue;
+
+                        targetCat.spent += tx.amount;
+
+                        const txDate = tx.date || new Date().toISOString().split('T')[0];
+                        const recordId = Math.random().toString(36).substr(2, 9) + Date.now().toString();
+                        const txDateNormalized = txDate.replace(/\//g, '-');
+
+                        if (txDateNormalized.startsWith(currentMonth)) {
+                            const displayDate = txDate.replace(/-/g, '/');
+                            newHistoryItems.push({
+                                id: recordId, date: displayDate, rawDate: txDate, month: currentMonth,
+                                item: tx.item, amount: tx.amount, categoryId: targetCat.id, categoryName: targetCat.name, note: ''
+                            });
+                        }
+
+                        const txMonth = txDate.slice(0, 7);
+                        callBackend('addData', { date: txDate, month: txMonth, category: targetCat.name, item: tx.item, amount: tx.amount, note: '', id: recordId }).catch(e => setLastLog({ msg: "同步失敗: " + e.message, type: 'error' }));
+                    }
+
+                    setCategories(updatedCategories);
+                    setHistory(prev => [...newHistoryItems, ...prev].slice(0, 100));
+                    if (hasNewCategory) saveCategoriesToCloud(updatedCategories);
+
+                    const totalAmount = transactions.reduce((acc, cur) => acc + cur.amount, 0);
+                    setLastLog({ msg: `記帳成功！共 ${transactions.length} 筆 ($${totalAmount})`, type: 'success' });
+                    setInput('');
+
+                } catch (error) {
+                    console.error(error);
+                    setLastLog({ msg: error.message || "發生錯誤", type: 'error' });
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-amber-50 max-w-md mx-auto shadow-2xl relative">
+                    <div className="flex-1 overflow-hidden relative">
+                        {view === 'budget' && <BudgetView
+                            categories={categories}
+                            currentMonth={currentMonth}
+                            isLoading={isLoading}
+                            onRefresh={handleMonthChange}
+                            onEdit={() => setIsEditing(true)}
+                        />}
+                        {view === 'history' && <HistoryView
+                            history={history}
+                            currentMonth={currentMonth}
+                            onDelete={deleteTransaction}
+                        />}
+                        {view === 'stats' && <div className="p-4 h-full flex flex-col items-center"><h2 className="text-xl font-bold mb-4 w-full px-2 text-amber-900 flex items-center gap-2"><span>📊</span> {currentMonth} 統計</h2><SimplePieChart data={categories.filter(c => c.spent > 0).map(c => ({ name: c.name, value: c.spent }))} /></div>}
+
+                        {isEditing && view === 'budget' && (
+                            <div className="absolute inset-0 bg-white/95 z-10 p-4 overflow-y-auto backdrop-blur-sm">
+                                <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-amber-800">編輯類別與預算</h3><button onClick={() => { setIsEditing(false); saveCategoriesToCloud(categories); }} className="text-amber-600 font-bold bg-amber-100 px-3 py-1 rounded-full">儲存並完成</button></div>
+                                {categories.map(c => (
+                                    <div key={c.id} className="flex gap-2 mb-3 bg-amber-50 p-2 rounded-xl border border-amber-100 items-center">
+                                        <div className="flex-1">
+                                            <div className="flex gap-2 mb-1">
+                                                <input value={c.name} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, name: e.target.value } : x))} className="bg-transparent border-b border-amber-200 p-1 w-full outline-none text-amber-900 placeholder-amber-300 font-bold" placeholder="名稱" />
+                                                {/* 【修正】輸入時允許空字串，防止刪除數字時自動跳回 0 */}
+                                                <input type="number" value={c.budget} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, budget: e.target.value === '' ? '' : Number(e.target.value) } : x))} className="bg-transparent border-b border-amber-200 p-1 w-20 text-center outline-none text-amber-900 font-mono" />
+                                            </div>
+                                            <input value={c.group || ''} onChange={e => setCategories(cats => cats.map(x => x.id === c.id ? { ...x, group: e.target.value } : x))} className="bg-transparent text-xs text-gray-500 p-1 w-full outline-none placeholder-gray-300" placeholder="群組 (例如: 變動費)" />
+                                        </div>
+                                        <button onClick={() => { if (confirm('刪除這個類別?')) setCategories(cats => cats.filter(x => x.id !== c.id)) }} className="text-red-400 p-2 hover:bg-red-50 rounded-full h-fit"><Icons.Trash /></button>
+                                    </div>
+                                ))}
+                                <button onClick={() => setCategories([...categories, { id: Date.now().toString(), name: '新類別', budget: 1000, spent: 0, group: '' }])} className="w-full py-3 border-2 border-dashed border-amber-300 rounded-xl text-amber-400 mt-4 hover:bg-amber-50 transition-colors font-bold"><Icons.Plus /> 新增類別</button>
+                            </div>
+                        )}
+                    </div>
+
+                    {view === 'budget' && !isEditing && (
+                        <div className="absolute bottom-20 left-0 right-0 px-4">
+                            {lastLog && <div className={`text-xs mb-2 px-4 py-2 rounded-xl w-fit shadow-sm max-w-full truncate border ${lastLog.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{lastLog.msg}</div>}
+                            <form onSubmit={processInput} className="bg-white p-2 rounded-[20px] shadow-xl border border-amber-100 flex items-center gap-2">
+                                <div className="p-2 text-amber-500 animate-pulse"><Icons.Sparkles /></div>
+                                <input value={input} onChange={e => setInput(e.target.value)} disabled={isProcessing || isLoading} placeholder={isLoading ? "資料載入中..." : "輸入: 早餐65, 捷運25..."} className="flex-1 outline-none text-gray-700 placeholder-amber-200 bg-transparent py-2" />
+                                <button disabled={!input || isProcessing || isLoading} className="bg-amber-500 text-white p-3 rounded-2xl disabled:opacity-50 hover:bg-amber-600 transition-transform active:scale-95 shadow-md shadow-amber-200">
+                                    {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Icons.Send />}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="bg-white border-t border-amber-100 p-2 flex justify-around items-center z-20 pb-safe">
+                        <button onClick={() => setView('budget')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'budget' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.Home /> <span className="text-[10px]">記帳</span></button>
+                        <button onClick={() => setView('history')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'history' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.List /> <span className="text-[10px]">紀錄</span></button>
+                        <button onClick={() => setView('stats')} className={`p-2 rounded-2xl flex flex-col items-center gap-1 w-16 transition-all ${view === 'stats' ? 'text-amber-600 bg-amber-50 scale-105 font-bold' : 'text-gray-300'}`}><Icons.PieChart /> <span className="text-[10px]">統計</span></button>
+                    </div>
+
+                    {showSettings && (
+                        <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                            <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
+                                <h2 className="font-bold text-lg mb-4 text-amber-900 flex items-center gap-2"><Icons.Settings /> 設定</h2>
+                                <div className="space-y-4 mb-6">
+                                    <div>
+                                        <label className="text-xs font-bold text-amber-500 ml-1">AI API Key (已寫死)</label>
+                                        <input type="password" value={settings.apiKey} readOnly className="w-full border-2 border-gray-100 bg-gray-50 p-2 rounded-xl outline-none text-gray-400 cursor-not-allowed" />
+                                    </div>
+
+                                    <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
+                                        <label className="text-xs font-bold text-amber-500 block mb-2">AI 選擇</label>
+                                        <div className="flex gap-2 mb-2">
+                                            <button onClick={() => setSettings(s => ({ ...s, provider: 'gemini' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'gemini' ? 'bg-amber-400 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>Gemini</button>
+                                            <button onClick={() => setSettings(s => ({ ...s, provider: 'openai' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'openai' ? 'bg-green-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>OpenAI</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowSettings(false)} className="w-full bg-amber-500 text-white p-3 rounded-xl font-bold shadow-lg shadow-amber-200">完成</button>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            );
+        }
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
 </body>
+
 </html>
