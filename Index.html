@@ -211,8 +211,62 @@
             );
         };
 
+        // 編輯紀錄 Modal
+        const EditModal = ({ record, categories, onSave, onCancel }) => {
+            const [form, setForm] = useState({
+                item: record.item,
+                amount: record.amount,
+                date: record.date.replace(/\//g, '-'),
+                categoryId: record.categoryId,
+            });
+            const [isSaving, setIsSaving] = useState(false);
+
+            const handleSave = async () => {
+                if (!form.item.trim() || !form.amount || !form.date) return;
+                setIsSaving(true);
+                await onSave(form);
+                setIsSaving(false);
+            };
+
+            return (
+                <div className="absolute inset-0 bg-black/40 z-20 flex items-end backdrop-blur-sm" onClick={onCancel}>
+                    <div className="bg-white w-full rounded-t-3xl p-6 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-bold text-lg text-amber-800 mb-5">編輯紀錄</h3>
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">項目</label>
+                                <input value={form.item} onChange={e => setForm(f => ({ ...f, item: e.target.value }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800" />
+                            </div>
+                            <div className="flex gap-3">
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">金額</label>
+                                    <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800 font-mono" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">日期</label>
+                                    <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">類別</label>
+                                <select value={form.categoryId} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800">
+                                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={onCancel} className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-400 font-bold">取消</button>
+                            <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-200 disabled:opacity-50">
+                                {isSaving ? '儲存中...' : '儲存'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // 獨立出來的 HistoryView，避免在 App 內部定義導致的渲染問題
-        const HistoryView = ({ history, currentMonth, onDelete }) => {
+        const HistoryView = ({ history, currentMonth, onDelete, onEdit }) => {
             // 安全檢查：如果 history 不是陣列，則視為空陣列，防止當機
             const safeHistory = Array.isArray(history) ? history : [];
 
@@ -230,6 +284,7 @@
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <span className="font-bold text-lg text-gray-800">${formatNumber(record.amount)}</span>
+                                        <button onClick={() => onEdit(record)} className="text-gray-200 hover:text-amber-400 p-2 transition-colors"><Icons.Edit /></button>
                                         <button onClick={() => onDelete(record)} className="text-gray-200 hover:text-red-400 p-2 transition-colors"><Icons.Trash /></button>
                                     </div>
                                 </div>
@@ -370,6 +425,7 @@
             const [input, setInput] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [isEditing, setIsEditing] = useState(false);
+            const [editingRecord, setEditingRecord] = useState(null);
             const [lastLog, setLastLogState] = useState(null);
 
             // 覆寫 setLastLog，加上 3.5 秒後自動消失的機制
@@ -450,6 +506,59 @@
                     const res = await callBackend('deleteData', { id: record.id });
                     if (res.status === 'deleted') setLastLog({ msg: "刪除成功", type: 'success' });
                 } catch (e) { setLastLog({ msg: "刪除失敗: " + e.message, type: 'error' }); }
+            };
+
+            const handleEditSave = async (formData) => {
+                const old = editingRecord;
+                const newMonth = formData.date.slice(0, 7); // YYYY-MM
+                const newDateDisplay = formData.date.replace(/-/g, '/'); // YYYY/MM/DD
+
+                let updatedCategories = [...categories];
+                // 還原舊資料對當前月份預算的影響
+                if (old.month === currentMonth) {
+                    updatedCategories = updatedCategories.map(c =>
+                        c.id === old.categoryId ? { ...c, spent: c.spent - old.amount } : c
+                    );
+                }
+                // 套用新資料對當前月份預算的影響
+                if (newMonth === currentMonth) {
+                    updatedCategories = updatedCategories.map(c =>
+                        c.id === formData.categoryId ? { ...c, spent: c.spent + formData.amount } : c
+                    );
+                }
+
+                const newCategory = categories.find(c => c.id === formData.categoryId);
+                const updatedItem = {
+                    ...old,
+                    item: formData.item,
+                    amount: formData.amount,
+                    date: newDateDisplay,
+                    month: newMonth,
+                    categoryId: formData.categoryId,
+                    categoryName: newCategory?.name || old.categoryName,
+                };
+
+                setCategories(updatedCategories);
+                // 若月份改變，從當前月份紀錄移除；否則更新
+                if (newMonth === currentMonth) {
+                    setHistory(prev => prev.map(r => r.id === old.id ? updatedItem : r));
+                } else {
+                    setHistory(prev => prev.filter(r => r.id !== old.id));
+                }
+                setEditingRecord(null);
+
+                try {
+                    await callBackend('updateData', {
+                        id: old.id,
+                        item: formData.item,
+                        amount: formData.amount,
+                        date: formData.date,
+                        category: newCategory?.name || old.categoryName,
+                    });
+                    setLastLog({ msg: '編輯成功', type: 'success' });
+                } catch (e) {
+                    setLastLog({ msg: '編輯失敗: ' + e.message, type: 'error' });
+                }
             };
 
             const processInput = async (e) => {
@@ -548,8 +657,18 @@
                             history={history}
                             currentMonth={currentMonth}
                             onDelete={deleteTransaction}
+                            onEdit={setEditingRecord}
                         />}
                         {view === 'stats' && <div className="p-4 h-full flex flex-col items-center"><h2 className="text-xl font-bold mb-4 w-full px-2 text-amber-900 flex items-center gap-2"><span>📊</span> {currentMonth} 統計</h2><SimplePieChart data={categories.filter(c => c.spent > 0).map(c => ({ name: c.name, value: c.spent }))} /></div>}
+
+                        {editingRecord && (
+                            <EditModal
+                                record={editingRecord}
+                                categories={categories}
+                                onSave={handleEditSave}
+                                onCancel={() => setEditingRecord(null)}
+                            />
+                        )}
 
                         {isEditing && view === 'budget' && (
                             <div className="absolute inset-0 bg-white/95 z-10 p-4 overflow-y-auto backdrop-blur-sm">
