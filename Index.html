@@ -224,7 +224,7 @@
             const handleSave = async () => {
                 if (!form.item.trim() || !form.amount || !form.date) return;
                 setIsSaving(true);
-                await onSave(form);
+                await onSave({ ...form, amount: Number(form.amount) });
                 setIsSaving(false);
             };
 
@@ -240,7 +240,7 @@
                             <div className="flex gap-3">
                                 <div className="flex-1">
                                     <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">金額</label>
-                                    <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800 font-mono" />
+                                    <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value === '' ? '' : Number(e.target.value) }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800 font-mono" />
                                 </div>
                                 <div className="flex-1">
                                     <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">日期</label>
