@@ -490,13 +490,12 @@
                         if (!targetCat && otherCategory) targetCat = otherCategory;
                         if (!targetCat) continue;
 
-                        targetCat.spent += tx.amount;
-
                         const txDate = tx.date || currentDate.replace(/\//g, '-');
                         const recordId = Math.random().toString(36).substr(2, 9) + Date.now().toString();
                         const txDateNormalized = txDate.replace(/\//g, '-');
 
                         if (txDateNormalized.startsWith(currentMonth)) {
+                            targetCat.spent += tx.amount;
                             const displayDate = txDate.replace(/-/g, '/');
                             newHistoryItems.push({
                                 id: recordId, date: displayDate, rawDate: txDate, month: currentMonth,
