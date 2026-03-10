@@ -369,7 +369,6 @@
 
             const [input, setInput] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
-            const [showSettings, setShowSettings] = useState(false);
             const [isEditing, setIsEditing] = useState(false);
             const [lastLog, setLastLogState] = useState(null);
 
@@ -384,16 +383,6 @@
                 }
             };
 
-            const [settings, setSettings] = useState(() => {
-                const saved = localStorage.getItem('budget-settings-v5');
-                return saved ? JSON.parse(saved) : {
-                    apiKey: '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',
-                    provider: 'openai',
-                    model: 'gpt-5-mini'
-                };
-            });
-
-            useEffect(() => { localStorage.setItem('budget-settings-v5', JSON.stringify(settings)); }, [settings]);
             useEffect(() => { loadDataFromCloud(currentMonth); }, [currentMonth]);
 
             // --- Cloud API Wrapper ---
@@ -606,28 +595,6 @@
                         <button onClick={() => setView('stats')} className={`py-3 px-6 rounded-2xl flex flex-col items-center gap-1.5 transition-all duration-300 ${view === 'stats' ? 'text-amber-600 bg-amber-100 scale-105 font-bold shadow-sm' : 'text-gray-400 hover:bg-white/50'}`}><Icons.PieChart /> <span className="text-[10px]">統計</span></button>
                     </div>
 
-                    {showSettings && (
-                        <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-white w-full rounded-3xl p-6 shadow-2xl">
-                                <h2 className="font-bold text-lg mb-4 text-amber-900 flex items-center gap-2"><Icons.Settings /> 設定</h2>
-                                <div className="space-y-4 mb-6">
-                                    <div>
-                                        <label className="text-xs font-bold text-amber-500 ml-1">AI API Key (已寫死)</label>
-                                        <input type="password" value={settings.apiKey} readOnly className="w-full border-2 border-gray-100 bg-gray-50 p-2 rounded-xl outline-none text-gray-400 cursor-not-allowed" />
-                                    </div>
-
-                                    <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
-                                        <label className="text-xs font-bold text-amber-500 block mb-2">AI 選擇</label>
-                                        <div className="flex gap-2 mb-2">
-                                            <button onClick={() => setSettings(s => ({ ...s, provider: 'gemini' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'gemini' ? 'bg-amber-400 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>Gemini</button>
-                                            <button onClick={() => setSettings(s => ({ ...s, provider: 'openai' }))} className={`flex-1 p-2 rounded-lg text-xs font-bold transition-colors ${settings.provider === 'openai' ? 'bg-green-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>OpenAI</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button onClick={() => setShowSettings(false)} className="w-full bg-amber-500 text-white p-3 rounded-xl font-bold shadow-lg shadow-amber-200">完成</button>
-                            </div>
-                        </div>
-                    )}
 
                 </div>
             );
