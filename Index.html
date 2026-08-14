@@ -121,6 +121,9 @@
         // ==========================================
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQcuqkmZhXQHpJDGUOoOxWQhZXS_NhPAD0Trl7lGz4cbLJio9VasesWnjv2yTYqs_bfQ/exec";
         // ==========================================
+        // 通行碼存放在使用者自己的瀏覽器裡，程式碼中不含任何密碼
+        const TOKEN_STORAGE_KEY = 'budgetapp_token';
+        // ==========================================
 
         const { useState, useEffect, useRef, useMemo } = React;
 
@@ -206,6 +209,60 @@
                                 <span className={hovered === index ? "font-bold text-amber-900" : "text-gray-600"}>{item.name}</span>
                             </div>
                         ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // 通行碼畫面：第一次使用時輸入一次，之後記在這台裝置上
+        const LockScreen = ({ onUnlock, error }) => {
+            const [value, setValue] = useState('');
+            const inputRef = useRef(null);
+
+            useEffect(() => { if (inputRef.current) inputRef.current.focus(); }, []);
+
+            const submit = (e) => {
+                e.preventDefault();
+                if (!value.trim()) return;
+                onUnlock(value.trim());
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-amber-50 max-w-md mx-auto shadow-2xl items-center justify-center p-8">
+                    <div className="w-full animate-fade-in-up">
+                        <div className="text-center mb-8">
+                            <div className="text-5xl mb-4">🌼</div>
+                            <h1 className="text-2xl font-bold text-amber-900 mb-2">白花嘉麗媽記帳</h1>
+                            <p className="text-sm text-amber-500">請輸入通行碼，只需要輸入這一次</p>
+                        </div>
+
+                        <form onSubmit={submit} className="space-y-4">
+                            <input
+                                ref={inputRef}
+                                type="password"
+                                value={value}
+                                onChange={e => setValue(e.target.value)}
+                                placeholder="通行碼"
+                                autoComplete="current-password"
+                                className="w-full border-2 border-amber-100 bg-white p-4 rounded-2xl outline-none focus:border-amber-300 text-gray-800 text-center text-lg tracking-widest shadow-sm transition-colors"
+                            />
+                            {error && (
+                                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-center animate-bounce-slight">
+                                    {error}
+                                </div>
+                            )}
+                            <button
+                                type="submit"
+                                disabled={!value.trim()}
+                                className="w-full py-4 bg-amber-500 text-white rounded-2xl font-bold shadow-lg shadow-amber-200 hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-40"
+                            >
+                                進入
+                            </button>
+                        </form>
+
+                        <p className="text-xs text-amber-400/80 text-center mt-6 leading-relaxed">
+                            通行碼會記在這台裝置上<br />換手機或清除瀏覽器資料後需要再輸入一次
+                        </p>
                     </div>
                 </div>
             );
@@ -429,6 +486,12 @@
             const [editingRecord, setEditingRecord] = useState(null);
             const [lastLog, setLastLogState] = useState(null);
 
+            // 通行碼：從瀏覽器讀出來，沒有的話就顯示輸入畫面
+            const [token, setToken] = useState(() => {
+                try { return localStorage.getItem(TOKEN_STORAGE_KEY) || ''; } catch (e) { return ''; }
+            });
+            const [authError, setAuthError] = useState('');
+
             // 覆寫 setLastLog，加上 3.5 秒後自動消失的機制
             const setLastLog = (logObj) => {
                 setLastLogState(logObj);
@@ -440,12 +503,26 @@
                 }
             };
 
-            useEffect(() => { loadDataFromCloud(currentMonth); }, [currentMonth]);
+            // 有通行碼才去讀資料
+            useEffect(() => { if (token) loadDataFromCloud(currentMonth); }, [currentMonth, token]);
+
+            // 通行碼錯誤時清掉，退回輸入畫面
+            const clearToken = (msg) => {
+                try { localStorage.removeItem(TOKEN_STORAGE_KEY); } catch (e) { }
+                setToken('');
+                setAuthError(msg || '通行碼錯誤，請重新輸入');
+            };
+
+            const handleUnlock = (value) => {
+                try { localStorage.setItem(TOKEN_STORAGE_KEY, value); } catch (e) { }
+                setAuthError('');
+                setToken(value);
+            };
 
             // --- Cloud API Wrapper ---
             const callBackend = async (action, payload = {}) => {
                 if (!GOOGLE_SCRIPT_URL) throw new Error("請在程式碼中設定 Google Script URL");
-                const body = JSON.stringify({ action, ...payload });
+                const body = JSON.stringify({ action, token, ...payload });
                 const response = await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST', mode: 'cors', redirect: 'follow',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -453,7 +530,12 @@
                 });
                 if (!response.ok) throw new Error("網路連線錯誤");
                 const json = await response.json();
-                if (json.status === 'error') throw new Error(json.message || "Unknown API Error");
+                if (json.status === 'error') {
+                    if (json.code === 'unauthorized') {
+                        clearToken('通行碼錯誤，請重新輸入');
+                    }
+                    throw new Error(json.message || "Unknown API Error");
+                }
                 return json;
             };
 
@@ -643,6 +725,11 @@
                     setIsProcessing(false);
                 }
             };
+
+            // 還沒輸入通行碼 → 只顯示通行碼畫面
+            if (!token) {
+                return <LockScreen onUnlock={handleUnlock} error={authError} />;
+            }
 
             return (
                 <div className="flex flex-col h-full bg-amber-50 max-w-md mx-auto shadow-2xl relative">
