@@ -3,9 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <!-- viewport-fit=cover 是全螢幕模式需要的；縮放維持鎖住，避免操作時誤觸放大 -->
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>白花嘉麗媽記帳APP</title>
 
     <!-- 加到主畫面：Android / Chrome 讀 manifest，iOS 讀下面這幾個 meta -->
@@ -112,15 +110,6 @@
 
         .stagger-5 {
             animation-delay: 250ms;
-        }
-
-        /* 加到主畫面後是全螢幕，要自己避開 iPhone 的瀏海與底部的白線 */
-        .pb-safe {
-            padding-bottom: env(safe-area-inset-bottom, 0px);
-        }
-
-        body {
-            padding-top: env(safe-area-inset-top, 0px);
         }
 
         /* 玻璃質感共用 */
