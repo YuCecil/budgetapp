@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>白花嘉麗媽記帳APP</title>
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <!--
+      GitHub Pages 會用這個檔案接住所有找不到的路徑。
+      主要用途是讓不帶檔名的短網址 (…/budgetapp/) 也能進入 App，
+      因為實際的檔名是大寫的 Index.html，而 macOS 的檔案系統不分大小寫，
+      沒辦法在同一個資料夾裡同時放 index.html 和 Index.html。
+    -->
+    <script>
+        (function () {
+            var parts = location.pathname.split('/').filter(Boolean);
+            // 專案型 Pages 的網址是 /<repo>/...，取第一段當基準路徑
+            var base = parts.length ? '/' + parts[0] + '/' : '/';
+            var target = base + 'Index.html';
+            // 避免萬一 Index.html 本身遺失時無限轉圈
+            if (location.pathname !== target) {
+                location.replace(target + location.search + location.hash);
+            }
+        })();
+    </script>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            background: #FFFBEB;
+            color: #78350F;
+            font-family: "PingFang TC", "Heiti TC", system-ui, sans-serif;
+            text-align: center;
+            padding: 24px;
+        }
+
+        .dot {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #FDE68A;
+            border-top-color: #F59E0B;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .dot {
+                animation: none;
+            }
+        }
+
+        a {
+            color: #B45309;
+            font-weight: 700;
+        }
+
+        p {
+            margin: 0;
+            font-size: 15px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dot"></div>
+    <p>正在開啟記帳 App…</p>
+    <p style="font-size:13px;color:#B45309"><noscript>請點下方連結繼續。</noscript>
+        沒有自動跳轉的話，<a id="link" href="Index.html">請點這裡</a>
+    </p>
+    <script>
+        var parts = location.pathname.split('/').filter(Boolean);
+        document.getElementById('link').href = (parts.length ? '/' + parts[0] + '/' : '/') + 'Index.html';
+    </script>
+</body>
+
+</html>
