@@ -641,6 +641,96 @@ function _migrate(apply) {
 }
 
 
+// ==========================================================================
+// 驗證：把整理後的資料跟備份逐格比對，證明帳目內容完全沒被動到
+// 執行 verify_1_CompareWithBackup() 即可，只讀取、不寫入任何東西。
+// ==========================================================================
+
+var BACKUP_SPREADSHEET_ID = "1UyrGe5CipMBYf1HVDt87FFDlC7xCSz48vkr5nVHGVMg";
+
+function verify_1_CompareWithBackup() {
+    var live = _getDataSheet(SpreadsheetApp.getActiveSpreadsheet()).getDataRange().getValues();
+
+    var backupSs = SpreadsheetApp.openById(BACKUP_SPREADSHEET_ID);
+    var backupSheet = backupSs.getSheetByName("記帳資料");
+    if (!backupSheet) {
+        Logger.log('❌ 備份檔裡找不到「記帳資料」工作表');
+        return;
+    }
+    var backup = backupSheet.getDataRange().getValues();
+
+    Logger.log('=== 與備份比對 (唯讀) ===');
+    Logger.log('目前列數: ' + live.length + '   備份列數: ' + backup.length);
+
+    if (live.length !== backup.length) {
+        Logger.log('⚠️ 列數不同 —— 可能是比對期間有人又記了新的帳，以下只比對共同的部分');
+    }
+
+    // 只比對「帳目內容」欄位，不含 ID 與類別ID（那兩欄本來就是這次要補的）
+    var checkCols = [
+        { i: D_TIME, name: '登記時間' },
+        { i: D_DATE, name: '消費日期' },
+        { i: D_MONTH, name: '月份' },
+        { i: D_CAT, name: '類別' },
+        { i: D_ITEM, name: '項目' },
+        { i: D_AMOUNT, name: '金額' },
+        { i: D_NOTE, name: '備註' }
+    ];
+
+    function norm(v) {
+        if (v instanceof Date) return 'D' + v.getTime();
+        if (v === null || v === undefined) return '';
+        return String(v);
+    }
+
+    var n = Math.min(live.length, backup.length);
+    var diffs = [];
+    var amountLive = 0, amountBackup = 0;
+
+    for (var r = 1; r < n; r++) {
+        for (var k = 0; k < checkCols.length; k++) {
+            var c = checkCols[k].i;
+            if (norm(live[r][c]) !== norm(backup[r][c])) {
+                diffs.push('第 ' + (r + 1) + ' 列 / ' + checkCols[k].name +
+                    ' : 備份「' + norm(backup[r][c]) + '」→ 現在「' + norm(live[r][c]) + '」');
+            }
+        }
+        amountLive += Number(live[r][D_AMOUNT]) || 0;
+        amountBackup += Number(backup[r][D_AMOUNT]) || 0;
+    }
+
+    Logger.log('');
+    Logger.log('--- 帳目內容比對結果 ---');
+    if (diffs.length === 0) {
+        Logger.log('✅ 比對了 ' + (n - 1) + ' 列 × 7 個欄位，完全沒有任何差異');
+    } else {
+        Logger.log('❌ 發現 ' + diffs.length + ' 處差異:');
+        diffs.slice(0, 30).forEach(function (d) { Logger.log('   ' + d); });
+        if (diffs.length > 30) Logger.log('   ...(還有 ' + (diffs.length - 30) + ' 處)');
+    }
+
+    Logger.log('');
+    Logger.log('--- 金額總和 ---');
+    Logger.log('備份: ' + amountBackup + '   現在: ' + amountLive +
+        (amountLive === amountBackup ? '   ✅ 一致' : '   ❌ 不一致'));
+
+    // 順便確認整理的成果
+    var blank = 0, seen = {}, dup = 0, withCat = 0;
+    for (var i = 1; i < live.length; i++) {
+        if (!live[i][D_DATE] && !live[i][D_CAT] && !live[i][D_AMOUNT]) continue;
+        var id = String(live[i][D_ID] || '').trim();
+        if (!id) blank++;
+        else { if (seen[id]) dup++; seen[id] = true; }
+        if (String(live[i][D_CATID] || '').trim()) withCat++;
+    }
+    Logger.log('');
+    Logger.log('--- 整理成果 ---');
+    Logger.log('仍然沒有編號的列: ' + blank + (blank === 0 ? '  ✅' : '  ❌'));
+    Logger.log('編號重複: ' + dup + (dup === 0 ? '  ✅' : '  ❌'));
+    Logger.log('已有類別ID的列: ' + withCat);
+}
+
+
 // ==========================================
 // 測試用：在編輯器裡選這個函式按「執行」，用來觸發授權並檢查後端是否正常。
 // ==========================================
