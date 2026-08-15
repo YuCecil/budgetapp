@@ -160,68 +160,253 @@
         const formatNumber = (num) => new Intl.NumberFormat('zh-TW').format(num || 0); // 防呆: 如果是 undefined 則顯示 0
 
         // --- Components ---
-        const SimplePieChart = ({ data }) => {
-            const [hovered, setHovered] = useState(null);
-            // 優化：讓圓餅圖的區塊依據「金額大小」排序，由大至小更直覺
-            const sortedData = [...data].sort((a, b) => b.value - a.value);
-            const total = sortedData.reduce((sum, item) => sum + item.value, 0);
+        // ==========================================================
+        // 統計頁
+        // ----------------------------------------------------------
+        // 這裡刻意不用圓餅圖：類別有十幾個時，圓餅會變成一堆看不懂的小碎片，
+        // 而且顏色不夠用、金額還得逐塊點開才看得到。
+        // 改成「排行長條 + 每日節奏」，一眼就能讀到數字。
+        //
+        // 顏色只用一種琥珀色，負責表示「多寡」；類別身分交給旁邊的文字。
+        // 超支才會出現紅色，而且一定伴隨文字說明，不單靠顏色傳達。
+        // ==========================================================
+        const MARK = '#D97706';      // 資料主色，白底對比 3:1 以上
+        const TRACK = '#FCEBD2';     // 長條底軌
+        const OVER = '#DC2626';      // 超支（狀態色，不當作類別色使用）
 
-            // 將佔比太小的項目合併，避免圖表擠在一起不好看
-            const threshold = total * 0.02; // < 2%
-            const displayData = [];
-            let otherValue = 0;
+        const StatSection = ({ title, note, children }) => (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-amber-100">
+                <div className="flex items-baseline justify-between mb-3 gap-2">
+                    <h3 className="font-bold text-amber-900 text-sm">{title}</h3>
+                    {note && <span className="text-[11px] text-gray-400 flex-shrink-0">{note}</span>}
+                </div>
+                {children}
+            </div>
+        );
 
-            sortedData.forEach(item => {
-                if (item.value >= threshold) {
-                    displayData.push(item);
-                } else {
-                    otherValue += item.value;
-                }
+        const StatsView = ({ categories, groups, history, currentMonth, isLoading }) => {
+            const [activeDay, setActiveDay] = useState(null);
+
+            // --- 預算總額：與首頁同一套算法，群組有明確預算就用它 ---
+            const explicit = {};
+            (groups || []).forEach(g => { if (g.explicit) explicit[g.name] = g.budget; });
+            const groupNames = [...new Set(categories.map(c => c.group).filter(Boolean))];
+            const sumOf = (fn) => categories.reduce((a, c) => a + (fn(c) ? (Number(c.budget) || 0) : 0), 0);
+            const totalBudget = sumOf(c => !c.group) + groupNames.reduce(
+                (a, n) => a + (explicit[n] !== undefined ? explicit[n] : sumOf(c => c.group === n)), 0);
+            const totalSpent = categories.reduce((a, c) => a + (Number(c.spent) || 0), 0);
+            const remaining = totalBudget - totalSpent;
+
+            // --- 這個月過了幾天 ---
+            const [yy, mm] = currentMonth.split('-').map(Number);
+            const daysInMonth = new Date(yy, mm, 0).getDate();
+            const now = new Date();
+            const isThisMonth = yy === now.getFullYear() && mm === now.getMonth() + 1;
+            const daysPassed = isThisMonth ? now.getDate() : daysInMonth;
+            const pacePct = (daysPassed / daysInMonth) * 100;
+            const spentPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+
+            // --- 類別排行 ---
+            const ranked = categories
+                .filter(c => (Number(c.spent) || 0) > 0)
+                .map(c => ({ ...c, spent: Number(c.spent) || 0 }))
+                .sort((a, b) => b.spent - a.spent);
+            const maxSpent = ranked.length ? ranked[0].spent : 0;
+
+            // --- 每日花費 ---
+            const daily = {};
+            (history || []).forEach(r => {
+                const parts = String(r.date || '').replace(/-/g, '/').split('/');
+                if (parts.length !== 3) return;
+                const d = Number(parts[2]);
+                if (d >= 1 && d <= 31) daily[d] = (daily[d] || 0) + (Number(r.amount) || 0);
             });
+            const days = Array.from({ length: daysInMonth }, (_, i) => ({ day: i + 1, value: daily[i + 1] || 0 }));
+            const maxDay = days.reduce((best, d) => d.value > best.value ? d : best, { day: 0, value: 0 });
+            const spentDays = days.filter(d => d.value > 0).length;
+            const avgPerDay = spentDays ? Math.round(totalSpent / daysPassed) : 0;
 
-            if (otherValue > 0) {
-                displayData.push({ name: '其他小額', value: otherValue });
+            // --- 最大的幾筆 ---
+            const biggest = [...(history || [])]
+                .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))
+                .slice(0, 5);
+
+            const truncated = (history || []).length >= 200;
+
+            if (isLoading && totalSpent === 0) {
+                return (
+                    <div className="p-4 h-full overflow-y-auto pb-24">
+                        <div className="text-center p-8 text-amber-600 text-xs animate-pulse">正在讀取 {currentMonth} 資料...</div>
+                    </div>
+                );
             }
 
-            let currentAngle = 0;
-
-            if (total === 0) return <div className="text-center mt-20 text-gray-400 animate-fade-in-up"><div>本月尚無花費</div></div>;
-
-            return (
-                <div className="flex flex-col items-center w-full max-w-xs mx-auto animate-fade-in-up">
-                    <div className="relative w-64 h-64 mb-6">
-                        <svg viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }} className="w-full h-full overflow-visible drop-shadow-md">
-                            {displayData.map((item, index) => {
-                                const percentage = item.value / total;
-                                const sliceAngle = percentage * 2 * Math.PI;
-                                if (displayData.length === 1) return <circle key={item.name} cx="0" cy="0" r="1" fill={COLORS[index % COLORS.length]} onClick={() => setHovered(index)} />;
-                                const x1 = Math.cos(currentAngle); const y1 = Math.sin(currentAngle);
-                                const x2 = Math.cos(currentAngle + sliceAngle); const y2 = Math.sin(currentAngle + sliceAngle);
-                                const largeArc = sliceAngle > Math.PI ? 1 : 0;
-                                const d = `M 0 0 L ${x1} ${y1} A 1 1 0 ${largeArc} 1 ${x2} ${y2} Z`;
-                                const path = <path key={item.name} d={d} fill={COLORS[index % COLORS.length]} stroke="#FFFBEB" strokeWidth="0.015" strokeLinejoin="round" onClick={() => setHovered(index)} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)} style={{ transition: 'all 0.3s ease', opacity: hovered !== null && hovered !== index ? 0.6 : 1, transform: hovered === index ? 'scale(1.05)' : 'scale(1)', transformOrigin: 'center', cursor: 'pointer' }} />;
-                                currentAngle += sliceAngle;
-                                return path;
-                            })}
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            {hovered !== null ? (
-                                <div className="glass-panel shadow-xl text-amber-900 text-xs p-3 rounded-xl border border-amber-100 text-center animate-bounce-slight">
-                                    <div className="font-bold text-sm mb-1">{displayData[hovered].name}</div>
-                                    <div className="font-mono text-amber-600 font-bold text-base">${formatNumber(displayData[hovered].value)}</div>
-                                    <div className="text-gray-400 mt-1">{Math.round(displayData[hovered].value / total * 100)}%</div>
-                                </div>
-                            ) : <div className="text-xs text-amber-700/50 font-medium flex flex-col items-center"><span>點擊區塊<br />查看明細</span></div>}
+            if (totalSpent === 0) {
+                return (
+                    <div className="p-4 h-full overflow-y-auto pb-24">
+                        <h2 className="text-xl font-bold mb-6 px-2 text-amber-900">{currentMonth} 統計</h2>
+                        <div className="text-center text-gray-400 mt-20 flex flex-col gap-2">
+                            <div className="text-4xl mb-2">🍃</div>
+                            <span>本月還沒有花費紀錄</span>
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 justify-center mt-2">
-                        {displayData.map((item, index) => (
-                            <div key={item.name} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full cursor-pointer transition-colors border ${hovered === index ? 'bg-amber-100 border-amber-300' : 'bg-white border-transparent'}`} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}>
-                                <div className="w-3 h-3 rounded-full" style={{ background: COLORS[index % COLORS.length] }}></div>
-                                <span className={hovered === index ? "font-bold text-amber-900" : "text-gray-600"}>{item.name}</span>
+                );
+            }
+
+            return (
+                <div className="p-4 h-full overflow-y-auto pb-28 space-y-3">
+                    <h2 className="text-xl font-bold px-2 pb-1 text-amber-900">{currentMonth} 統計</h2>
+
+                    {/* ── 摘要：這是一個數字，不需要圖表 ── */}
+                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-amber-100 animate-fade-in-up">
+                        <div className="text-xs text-gray-400 mb-1">本月已花</div>
+                        <div className="text-4xl font-bold tracking-tight text-amber-900 mb-1">
+                            ${formatNumber(totalSpent)}
+                        </div>
+                        <div className="text-sm text-gray-500 mb-4">
+                            預算 ${formatNumber(totalBudget)}
+                            <span className={remaining < 0 ? 'text-red-600 font-bold' : ''}>
+                                {remaining < 0
+                                    ? `　已超支 $${formatNumber(Math.abs(remaining))}`
+                                    : `　還剩 $${formatNumber(remaining)}`}
+                            </span>
+                        </div>
+
+                        {/* 進度條：實心是已花，細線是「今天」的位置 */}
+                        <div className="relative h-2.5 rounded-full overflow-hidden mb-2" style={{ background: TRACK }}>
+                            <div className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(100, spentPct)}%`, background: remaining < 0 ? OVER : MARK }} />
+                        </div>
+                        {isThisMonth && (
+                            <div className="relative h-3 -mt-2 mb-1">
+                                <div className="absolute top-0 w-px h-2.5 bg-amber-900/40"
+                                    style={{ left: `${Math.min(100, pacePct)}%` }} />
+                                <div className="absolute top-3 text-[10px] text-gray-400 -translate-x-1/2 whitespace-nowrap"
+                                    style={{ left: `${Math.min(92, Math.max(8, pacePct))}%` }}>今天</div>
                             </div>
-                        ))}
+                        )}
+
+                        <div className="flex items-center justify-between mt-5 pt-3 border-t border-gray-100 text-xs">
+                            <span className="text-gray-400">
+                                本月過了 <span className="font-mono font-bold text-gray-600">{daysPassed}/{daysInMonth}</span> 天
+                            </span>
+                            {totalBudget > 0 && (
+                                <span className="text-gray-400">
+                                    已用 <span className={`font-mono font-bold ${remaining < 0 ? 'text-red-600' : 'text-gray-600'}`}>{Math.round(spentPct)}%</span> 的預算
+                                </span>
+                            )}
+                        </div>
                     </div>
+
+                    {/* ── 類別排行：長條直接標數字，不用點就看得到 ── */}
+                    <StatSection title="花在哪裡" note={`${ranked.length} 個類別`}>
+                        <div className="space-y-3">
+                            {ranked.map(c => {
+                                const share = totalSpent > 0 ? (c.spent / totalSpent) * 100 : 0;
+                                const budget = Number(c.budget) || 0;
+                                // 群組成員的預算多半掛在群組上，單獨比較沒有意義，所以不標超支
+                                const over = !c.group && budget > 0 && c.spent > budget;
+                                return (
+                                    <div key={c.id}>
+                                        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                                            <span className="text-sm text-gray-700 truncate">{c.name}</span>
+                                            <span className="flex items-baseline gap-2 flex-shrink-0">
+                                                {over && (
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                                        style={{ color: OVER, background: '#FEE2E2' }}>
+                                                        超支 ${formatNumber(c.spent - budget)}
+                                                    </span>
+                                                )}
+                                                <span className="text-[11px] text-gray-400 font-mono tabular-nums">
+                                                    {share < 1 ? '<1' : Math.round(share)}%
+                                                </span>
+                                                <span className="text-sm font-bold text-gray-800 font-mono tabular-nums">
+                                                    ${formatNumber(c.spent)}
+                                                </span>
+                                            </span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: TRACK }}>
+                                            <div className="h-full rounded-full transition-all duration-500"
+                                                style={{
+                                                    width: `${maxSpent > 0 ? Math.max(2, (c.spent / maxSpent) * 100) : 0}%`,
+                                                    background: over ? OVER : MARK
+                                                }} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </StatSection>
+
+                    {/* ── 每日節奏 ── */}
+                    <StatSection
+                        title="每天花多少"
+                        note={isThisMonth ? `平均一天 $${formatNumber(avgPerDay)}` : `有花費的天數 ${spentDays} 天`}
+                    >
+                        <div className="flex items-end gap-[2px] h-24 mb-1" onMouseLeave={() => setActiveDay(null)}>
+                            {days.map(d => {
+                                const h = maxDay.value > 0 ? (d.value / maxDay.value) * 100 : 0;
+                                const isMax = d.value > 0 && d.day === maxDay.day;
+                                const active = activeDay === d.day;
+                                return (
+                                    <div key={d.day}
+                                        className="flex-1 h-full flex items-end cursor-pointer"
+                                        onClick={() => setActiveDay(active ? null : d.day)}
+                                        onMouseEnter={() => setActiveDay(d.day)}
+                                        title={`${mm}/${d.day}　$${formatNumber(d.value)}`}>
+                                        <div className="w-full rounded-t transition-all duration-300"
+                                            style={{
+                                                height: d.value > 0 ? `${Math.max(4, h)}%` : '2px',
+                                                background: d.value === 0 ? '#F3F0EA' : (isMax || active ? MARK : '#EFC98A')
+                                            }} />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-between text-[10px] text-gray-400 font-mono tabular-nums">
+                            <span>1</span>
+                            <span>{Math.round(daysInMonth / 2)}</span>
+                            <span>{daysInMonth}</span>
+                        </div>
+                        <div className="mt-2 text-xs h-4">
+                            {activeDay ? (
+                                <span className="text-gray-600">
+                                    {mm}/{activeDay}
+                                    <span className="font-bold font-mono">${formatNumber(daily[activeDay] || 0)}</span>
+                                </span>
+                            ) : maxDay.value > 0 ? (
+                                <span className="text-gray-400">
+                                    花最多的是 {mm}/{maxDay.day}，
+                                    <span className="font-bold font-mono text-gray-600">${formatNumber(maxDay.value)}</span>
+                                </span>
+                            ) : null}
+                        </div>
+                    </StatSection>
+
+                    {/* ── 最大的幾筆 ── */}
+                    {biggest.length > 0 && (
+                        <StatSection title="最大的幾筆">
+                            <div className="divide-y divide-gray-100">
+                                {biggest.map((r, i) => (
+                                    <div key={r.id || i} className="py-2.5 flex items-center justify-between gap-3 first:pt-0 last:pb-0">
+                                        <div className="min-w-0">
+                                            <div className="text-sm text-gray-700 truncate">{r.item}</div>
+                                            <div className="text-[11px] text-gray-400">{r.date}　{r.categoryName}</div>
+                                        </div>
+                                        <span className="text-sm font-bold text-gray-800 font-mono tabular-nums flex-shrink-0">
+                                            ${formatNumber(r.amount)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </StatSection>
+                    )}
+
+                    {truncated && (
+                        <p className="text-[11px] text-gray-400 px-2 pt-1 leading-relaxed">
+                            本月紀錄較多，「每天花多少」與「最大的幾筆」只採計最近 200 筆；上方的總額與類別排行是完整的。
+                        </p>
+                    )}
                 </div>
             );
         };
@@ -948,7 +1133,13 @@
                             onDelete={deleteTransaction}
                             onEdit={setEditingRecord}
                         />}
-                        {view === 'stats' && <div className="p-4 h-full flex flex-col items-center"><h2 className="text-xl font-bold mb-4 w-full px-2 text-amber-900 flex items-center gap-2"><span>📊</span> {currentMonth} 統計</h2><SimplePieChart data={categories.filter(c => c.spent > 0).map(c => ({ name: c.name, value: c.spent }))} /></div>}
+                        {view === 'stats' && <StatsView
+                            categories={categories}
+                            groups={groups}
+                            history={history}
+                            currentMonth={currentMonth}
+                            isLoading={isLoading}
+                        />}
 
                         {pendingTx && (
                             <ConfirmModal
