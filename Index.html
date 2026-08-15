@@ -268,6 +268,69 @@
             );
         };
 
+        // 記帳前的確認畫面：讓使用者在寫入前修正 AI 猜錯的分類
+        const ConfirmModal = ({ items, categories, onConfirm, onCancel, isSaving }) => {
+            const [rows, setRows] = useState(items);
+
+            const setCat = (idx, categoryId) =>
+                setRows(rs => rs.map((r, i) => i === idx ? { ...r, categoryId } : r));
+            const removeRow = (idx) => setRows(rs => rs.filter((_, i) => i !== idx));
+
+            const total = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+            return (
+                <div className="absolute inset-0 bg-black/40 z-30 flex items-end backdrop-blur-sm" onClick={isSaving ? undefined : onCancel}>
+                    <div className="bg-white w-full rounded-t-3xl shadow-2xl animate-fade-in-up flex flex-col max-h-[85%]" onClick={e => e.stopPropagation()}>
+                        <div className="px-6 pt-6 pb-3 flex-shrink-0">
+                            <h3 className="font-bold text-lg text-amber-800">確認這幾筆</h3>
+                            <p className="text-xs text-amber-500 mt-1">分類不對的話，點旁邊的選單改掉再確認</p>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto px-6 divide-y divide-gray-100">
+                            {rows.length === 0 && (
+                                <div className="text-center text-gray-400 py-8 text-sm">沒有要記的項目了</div>
+                            )}
+                            {rows.map((r, idx) => (
+                                <div key={idx} className="py-3 flex items-center gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-gray-800 truncate">{r.item}</div>
+                                        <div className="text-xs text-gray-400">{r.date}</div>
+                                    </div>
+                                    <div className="font-bold text-gray-800 font-mono flex-shrink-0">${formatNumber(r.amount)}</div>
+                                    <select
+                                        value={r.categoryId}
+                                        onChange={e => setCat(idx, e.target.value)}
+                                        className="border-2 border-amber-100 bg-amber-50/50 rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-amber-300 max-w-[7.5rem] flex-shrink-0"
+                                    >
+                                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                    <button onClick={() => removeRow(idx)} aria-label="不要記這筆"
+                                        className="text-gray-200 hover:text-red-400 hover:bg-red-50 p-1.5 rounded-full transition-colors active:scale-90 flex-shrink-0">
+                                        <Icons.Trash />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-white rounded-b-none">
+                            <div className="flex justify-between items-center mb-3 text-sm">
+                                <span className="text-gray-400">共 {rows.length} 筆</span>
+                                <span className="font-bold text-amber-700 font-mono">${formatNumber(total)}</span>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={onCancel} disabled={isSaving}
+                                    className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-400 font-bold hover:bg-gray-50 hover:border-gray-200 transition-colors active:scale-95 disabled:opacity-50">取消</button>
+                                <button onClick={() => onConfirm(rows)} disabled={isSaving || rows.length === 0}
+                                    className="flex-[2] py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-200 hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-50">
+                                    {isSaving ? '記帳中...' : '確認記帳'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // 編輯紀錄 Modal
         const EditModal = ({ record, categories, onSave, onCancel }) => {
             const [form, setForm] = useState({
@@ -280,6 +343,7 @@
 
             const handleSave = async () => {
                 if (!form.item.trim() || !form.amount || !form.date) return;
+                if (!form.categoryId) return;   // 對不到類別的舊紀錄必須先選一個類別
                 setIsSaving(true);
                 await onSave({ ...form, amount: Number(form.amount) });
                 setIsSaving(false);
@@ -306,14 +370,15 @@
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-amber-500 ml-1 block mb-1">類別</label>
-                                <select value={form.categoryId} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))} className="w-full border-2 border-amber-100 bg-amber-50/50 p-3 rounded-xl outline-none focus:border-amber-300 text-gray-800">
+                                <select value={form.categoryId} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))} className={`w-full border-2 p-3 rounded-xl outline-none text-gray-800 ${form.categoryId ? 'border-amber-100 bg-amber-50/50 focus:border-amber-300' : 'border-red-200 bg-red-50/50 focus:border-red-300'}`}>
+                                    {!form.categoryId && <option value="">請選擇類別（原本的「{record.categoryName}」已不存在）</option>}
                                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                             </div>
                         </div>
                         <div className="flex gap-3">
                             <button onClick={onCancel} className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-400 font-bold hover:bg-gray-50 hover:border-gray-200 transition-colors active:scale-95">取消</button>
-                            <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-200 hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-50">
+                            <button onClick={handleSave} disabled={isSaving || !form.categoryId} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-200 hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-50">
                                 {isSaving ? '儲存中...' : '儲存'}
                             </button>
                         </div>
@@ -332,20 +397,28 @@
                     <h2 className="text-xl font-bold mb-4 px-2 text-amber-900 flex items-center gap-2 animate-fade-in-up"><span>📜</span> {currentMonth} 紀錄</h2>
                     {safeHistory.length === 0 ? <div className="text-center text-gray-400 mt-20 flex flex-col gap-2 animate-fade-in-up stagger-1"><div className="text-4xl mb-2">🍃</div><span>本月暫無紀錄，來記一筆吧！</span></div> : (
                         <div className="space-y-3">
-                            {safeHistory.map((record, index) => (
-                                <div key={record.id || Math.random()} className={`bg-white p-4 rounded-2xl shadow-sm border border-amber-50 flex justify-between items-center group animate-fade-in-up stagger-${(index % 5) + 1} hover:shadow-md transition-shadow`}>
-                                    <div>
-                                        <div className="font-bold text-gray-800 flex items-center gap-2">{record.item}</div>
+                            {safeHistory.map((record, index) => {
+                                const noId = !record.id;
+                                return (
+                                <div key={record.id || `row-${index}`} className={`bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center group animate-fade-in-up stagger-${(index % 5) + 1} hover:shadow-md transition-shadow ${record.matched === false ? 'border-red-200' : 'border-amber-50'}`}>
+                                    <div className="min-w-0">
+                                        <div className="font-bold text-gray-800 flex items-center gap-2 truncate">{record.item}</div>
                                         <div className="text-xs text-amber-500 font-medium">{record.date}</div>
-                                        <div className="text-xs text-gray-400">{record.categoryName}</div>
+                                        <div className={`text-xs ${record.matched === false ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                                            {record.categoryName}
+                                            {record.matched === false && ' · 此類別已不存在，沒有算進預算'}
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 flex-shrink-0">
                                         <span className="font-bold text-lg text-gray-800">${formatNumber(record.amount)}</span>
-                                        <button onClick={() => onEdit(record)} className="text-gray-200 hover:text-amber-400 hover:bg-amber-50 p-2 rounded-full transition-colors active:scale-90"><Icons.Edit /></button>
-                                        <button onClick={() => onDelete(record)} className="text-gray-200 hover:text-red-400 hover:bg-red-50 p-2 rounded-full transition-colors active:scale-90"><Icons.Trash /></button>
+                                        <button onClick={() => onEdit(record)} disabled={noId} title={noId ? '這筆舊資料沒有編號，無法修改' : '編輯'}
+                                            className="text-gray-200 hover:text-amber-400 hover:bg-amber-50 p-2 rounded-full transition-colors active:scale-90 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-200"><Icons.Edit /></button>
+                                        <button onClick={() => onDelete(record)} disabled={noId} title={noId ? '這筆舊資料沒有編號，無法刪除' : '刪除'}
+                                            className="text-gray-200 hover:text-red-400 hover:bg-red-50 p-2 rounded-full transition-colors active:scale-90 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-200"><Icons.Trash /></button>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -353,7 +426,11 @@
         };
 
         // 獨立出來的 BudgetView
-        const BudgetView = ({ categories, currentMonth, isLoading, onRefresh, onEdit, onUpdateCategory, onDeleteCategory, onAddCategory }) => {
+        const BudgetView = ({ categories, groups: groupInfo, unmatched, currentMonth, isLoading, onRefresh, onEdit }) => {
+            // 群組若有「明確設定的預算」就用它，否則退回成員預算加總（維持舊行為）
+            const explicitBudget = {};
+            (groupInfo || []).forEach(g => { if (g.explicit) explicitBudget[g.name] = g.budget; });
+
             const renderCategories = () => {
                 const groups = {};
                 const standalone = [];
@@ -373,7 +450,8 @@
                 const elements = [];
 
                 Object.values(groups).forEach((group, groupIdx) => {
-                    const remaining = group.totalBudget - group.totalSpent;
+                    const budget = explicitBudget[group.name] !== undefined ? explicitBudget[group.name] : group.totalBudget;
+                    const remaining = budget - group.totalSpent;
                     elements.push(
                         <div key={`group-${group.name}`} className={`mb-4 bg-white rounded-2xl shadow-sm border border-amber-100 overflow-hidden animate-fade-in-up stagger-${(groupIdx % 5) + 1} hover:shadow-md transition-shadow`}>
                             <div className="bg-amber-50/50 p-3 flex justify-between items-center border-b border-amber-100">
@@ -383,7 +461,7 @@
                                 </div>
                                 <div className="text-right">
                                     <span className={`font-bold ${remaining < 0 ? 'text-red-500' : 'text-amber-700'}`}>${formatNumber(remaining)}</span>
-                                    <span className="text-xs text-amber-400 ml-1">/ ${formatNumber(group.totalBudget)}</span>
+                                    <span className="text-xs text-amber-400 ml-1">/ ${formatNumber(budget)}</span>
                                 </div>
                             </div>
                             <div className="divide-y divide-gray-100">
@@ -424,9 +502,29 @@
                 return elements;
             };
 
+            // 總預算 = 沒分組的類別預算 + 各群組預算（群組有明確設定就用它，否則用成員加總）
+            const totalBudget = categories.reduce((acc, c) => c.group ? acc : acc + (Number(c.budget) || 0), 0)
+                + Object.keys(
+                    categories.reduce((m, c) => { if (c.group) m[c.group] = true; return m; }, {})
+                ).reduce((acc, name) => {
+                    if (explicitBudget[name] !== undefined) return acc + explicitBudget[name];
+                    return acc + categories.reduce((s, c) => c.group === name ? s + (Number(c.budget) || 0) : s, 0);
+                }, 0);
+
+            const totalSpent = categories.reduce((acc, c) => acc + (Number(c.spent) || 0), 0);
+
             return (
                 <div className="space-y-3 pb-24 p-4 overflow-y-auto h-full">
                     {isLoading && <div className="text-center p-2 text-amber-600 text-xs animate-pulse">正在讀取 {currentMonth} 資料...</div>}
+
+                    {unmatched && unmatched.count > 0 && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-3.5 text-xs animate-fade-in-up">
+                            <div className="font-bold mb-1">有 {unmatched.count} 筆花費（共 ${formatNumber(unmatched.total)}）沒有算進預算</div>
+                            <div className="text-red-500 leading-relaxed">
+                                這些紀錄的類別「{(unmatched.names || []).join('、')}」在本月設定裡不存在，可能是類別被改名或刪除了。到「紀錄」頁把它們改成正確的類別就會納入計算。
+                            </div>
+                        </div>
+                    )}
 
                     <div className="bg-amber-400 rounded-3xl p-5 text-white shadow-lg mb-6 relative overflow-hidden transition-all animate-fade-in-up">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl -mr-10 -mt-10"></div>
@@ -443,16 +541,16 @@
                             <div>
                                 <div className="text-amber-100 text-xs font-bold mb-1 tracking-wider">本月剩餘預算</div>
                                 {/* 【修正】計算總剩餘時加入防呆，避免空預算導致 NaN */}
-                                <div className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + ((Number(c.budget) || 0) - c.spent), 0))}</div>
+                                <div className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">${formatNumber(totalBudget - totalSpent)}</div>
                             </div>
                             <div className="text-right">
                                 <div className="text-amber-100 text-xs font-bold mb-1 tracking-wider">總預算</div>
-                                <div className="text-2xl font-bold tracking-tight text-amber-50 drop-shadow-sm">${formatNumber(categories.reduce((acc, c) => acc + (Number(c.budget) || 0), 0))}</div>
+                                <div className="text-2xl font-bold tracking-tight text-amber-50 drop-shadow-sm">${formatNumber(totalBudget)}</div>
                             </div>
                         </div>
 
                         <div className="h-3 bg-black/10 rounded-full overflow-hidden flex p-0.5 mt-4 relative z-10">
-                            {categories.map((c, i) => <div key={c.id} style={{ width: `${(c.spent / Math.max(1, categories.reduce((s, x) => s + (Number(x.budget) || 0), 0))) * 100}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full transition-all duration-500" />)}
+                            {categories.map((c, i) => <div key={c.id} style={{ width: `${Math.min(100, (c.spent / Math.max(1, totalBudget)) * 100)}%`, background: COLORS[i % COLORS.length] }} className="h-full rounded-full transition-all duration-500" />)}
                         </div>
                     </div>
 
@@ -485,6 +583,14 @@
             const [categoriesSnapshot, setCategoriesSnapshot] = useState([]);
             const [editingRecord, setEditingRecord] = useState(null);
             const [lastLog, setLastLogState] = useState(null);
+
+            // AI 拆解完、等待使用者確認的項目（null = 沒有待確認的）
+            const [pendingTx, setPendingTx] = useState(null);
+            const [isCommitting, setIsCommitting] = useState(false);
+            // 群組預算與「對不到類別的花費」，皆由後端提供
+            const [groups, setGroups] = useState([]);
+            const [groupBudgetDraft, setGroupBudgetDraft] = useState({});
+            const [unmatched, setUnmatched] = useState(null);
 
             // 通行碼：從瀏覽器讀出來，沒有的話就顯示輸入畫面
             const [token, setToken] = useState(() => {
@@ -546,6 +652,8 @@
                     if (data) {
                         setCategories(data.categories || []);
                         setHistory(data.history || []); // 強制給予空陣列，防止 undefined
+                        setGroups(data.groups || []);
+                        setUnmatched(data.unmatched && data.unmatched.count > 0 ? data.unmatched : null);
                         setLastLog({ msg: `已讀取 ${monthToLoad} 資料`, type: 'success' });
                     }
                 } catch (err) {
@@ -566,29 +674,52 @@
                 }
             };
 
-            const saveCategoriesToCloud = async (newCategories) => {
+            const saveCategoriesToCloud = async (newCategories, newGroupBudgets) => {
                 setCategories(newCategories);
+                const budgets = newGroupBudgets !== undefined ? newGroupBudgets : groupBudgetDraft;
                 try {
                     // 將當前月份也傳送過去，讓後端可以獨立儲存
-                    await callBackend('saveConfig', { categories: newCategories, month: currentMonth });
+                    await callBackend('saveConfig', {
+                        categories: newCategories,
+                        groupBudgets: budgets,
+                        month: currentMonth
+                    });
                     setLastLog({ msg: `${currentMonth} 的類別設定已儲存`, type: 'success' });
+                    loadDataFromCloud(currentMonth);   // 重新取回，讓群組預算等衍生資料保持一致
                 } catch (e) {
                     setLastLog({ msg: "儲存設定失敗: " + e.message, type: 'error' });
                 }
             };
 
             const deleteTransaction = async (record) => {
-                if (!confirm(`確定要刪除「${record.item} $${record.amount}」嗎？`)) return;
-                const targetCat = categories.find(c => c.id === record.categoryId);
-                if (targetCat) {
-                    const newCats = categories.map(c => c.id === record.categoryId ? { ...c, spent: c.spent - record.amount } : c);
-                    setCategories(newCats);
+                // 沒有編號的舊資料不能刪 —— 硬刪會刪到別筆
+                if (!record.id) {
+                    setLastLog({ msg: '這筆是舊資料、沒有編號，無法在 App 裡刪除，請直接到試算表處理', type: 'error' });
+                    return;
                 }
+                if (!confirm(`確定要刪除「${record.item} $${record.amount}」嗎？`)) return;
+
+                // 先記住原始狀態，失敗時要還原，避免畫面顯示已刪除但雲端還在
+                const prevCategories = categories;
+                const prevHistory = history;
+
+                setCategories(cats => cats.map(c => c.id === record.categoryId ? { ...c, spent: c.spent - record.amount } : c));
                 setHistory(prev => prev.filter(r => r.id !== record.id));
+
                 try {
                     const res = await callBackend('deleteData', { id: record.id });
-                    if (res.status === 'deleted') setLastLog({ msg: "刪除成功", type: 'success' });
-                } catch (e) { setLastLog({ msg: "刪除失敗: " + e.message, type: 'error' }); }
+                    if (res.status === 'deleted') {
+                        setLastLog({ msg: "刪除成功", type: 'success' });
+                    } else {
+                        setCategories(prevCategories);
+                        setHistory(prevHistory);
+                        setLastLog({ msg: '找不到這筆資料，畫面已還原', type: 'error' });
+                    }
+                } catch (e) {
+                    setCategories(prevCategories);
+                    setHistory(prevHistory);
+                    setLastLog({ msg: "刪除失敗，畫面已還原: " + e.message, type: 'error' });
+                }
             };
 
             const handleEditSave = async (formData) => {
@@ -621,6 +752,10 @@
                     categoryName: newCategory?.name || old.categoryName,
                 };
 
+                // 先記住原始狀態，失敗時要還原
+                const prevCategories = categories;
+                const prevHistory = history;
+
                 setCategories(updatedCategories);
                 // 若月份改變，從當前月份紀錄移除；否則更新
                 if (newMonth === currentMonth) {
@@ -631,16 +766,25 @@
                 setEditingRecord(null);
 
                 try {
-                    await callBackend('updateData', {
+                    const res = await callBackend('updateData', {
                         id: old.id,
                         item: formData.item,
                         amount: formData.amount,
                         date: formData.date,
                         category: newCategory?.name || old.categoryName,
+                        categoryId: formData.categoryId,
                     });
-                    setLastLog({ msg: '編輯成功', type: 'success' });
+                    if (res.status === 'updated') {
+                        setLastLog({ msg: '編輯成功', type: 'success' });
+                    } else {
+                        setCategories(prevCategories);
+                        setHistory(prevHistory);
+                        setLastLog({ msg: '找不到這筆資料，畫面已還原', type: 'error' });
+                    }
                 } catch (e) {
-                    setLastLog({ msg: '編輯失敗: ' + e.message, type: 'error' });
+                    setCategories(prevCategories);
+                    setHistory(prevHistory);
+                    setLastLog({ msg: '編輯失敗，畫面已還原: ' + e.message, type: 'error' });
                 }
             };
 
@@ -660,69 +804,89 @@
                         throw new Error("無法辨識任何交易");
                     }
 
-                    const transactions = result.data.transactions;
-                    let newHistoryItems = [];
-                    let updatedCategories = [...categories];
-                    let hasNewCategory = false;
+                    // 準備確認清單：先把 AI 給的分類對到實際存在的類別，
+                    // 對不到的一律落在「其他」，讓使用者在確認畫面自行改正。
+                    const fallback = categories.find(c => c.name === '其他') || categories[0];
+                    if (!fallback) throw new Error("目前沒有任何類別，請先到「編輯類別與預算」新增");
 
-                    const needsOther = transactions.some(t => t.categoryId === 'OTHER' || !updatedCategories.find(c => c.id === t.categoryId));
-                    let otherCategory = updatedCategories.find(c => c.name === '其他');
+                    const pending = result.data.transactions.map(tx => {
+                        let cat = categories.find(c => c.id === tx.categoryId);
+                        if (!cat) cat = categories.find(c => c.name === tx.item);
+                        if (!cat) cat = categories.find(c => tx.item && c.name.includes(tx.item));
+                        if (!cat) cat = fallback;
+                        return {
+                            item: tx.item,
+                            amount: Number(tx.amount) || 0,
+                            date: (tx.date || currentDate).replace(/\//g, '-'),
+                            categoryId: cat.id,
+                        };
+                    });
 
-                    if (needsOther && !otherCategory) {
-                        otherCategory = { id: Date.now().toString(), name: '其他', budget: 0, spent: 0, group: '' };
-                        updatedCategories.push(otherCategory);
-                        hasNewCategory = true;
-                    }
-
-                    const apiPromises = []; // 用於收集所有呼叫
-
-                    for (const tx of transactions) {
-                        let targetCat = updatedCategories.find(c => c.id === tx.categoryId);
-                        if (!targetCat) targetCat = updatedCategories.find(c => c.name.includes(tx.item));
-                        if (!targetCat && otherCategory) targetCat = otherCategory;
-                        if (!targetCat) continue;
-
-                        const txDate = tx.date || currentDate.replace(/\//g, '-');
-                        const recordId = Math.random().toString(36).substr(2, 9) + Date.now().toString();
-                        const txDateNormalized = txDate.replace(/\//g, '-');
-
-                        if (txDateNormalized.startsWith(currentMonth)) {
-                            targetCat.spent += tx.amount;
-                            const displayDate = txDate.replace(/-/g, '/');
-                            newHistoryItems.push({
-                                id: recordId, date: displayDate, rawDate: txDate, month: currentMonth,
-                                item: tx.item, amount: tx.amount, categoryId: targetCat.id, categoryName: targetCat.name, note: ''
-                            });
-                        }
-
-                        const txMonth = txDate.slice(0, 7);
-                        // 將所有傳送 API 的 Promise 收集起來
-                        apiPromises.push(callBackend('addData', { date: txDate, month: txMonth, category: targetCat.name, item: tx.item, amount: tx.amount, note: '', id: recordId }));
-                    }
-
-                    setCategories(updatedCategories);
-                    setHistory(prev => [...newHistoryItems, ...prev].slice(0, 100));
-                    if (hasNewCategory) saveCategoriesToCloud(updatedCategories);
-
-                    // 修復：等待所有新增動作完成，若有失敗給予提示
-                    const apiResults = await Promise.allSettled(apiPromises);
-                    const failedCount = apiResults.filter(r => r.status === 'rejected').length;
-
-                    const totalAmount = transactions.reduce((acc, cur) => acc + cur.amount, 0);
-
-                    if (failedCount > 0) {
-                        setLastLog({ msg: `記帳完成，但有 ${failedCount} 筆雲端同步失敗，請重整畫面！`, type: 'error' });
-                    } else {
-                        setLastLog({ msg: `記帳成功！共 ${transactions.length} 筆 ($${totalAmount})`, type: 'success' });
-                    }
-
-                    setInput('');
+                    setPendingTx(pending);
 
                 } catch (error) {
                     console.error(error);
                     setLastLog({ msg: error.message || "發生錯誤", type: 'error' });
                 } finally {
                     setIsProcessing(false);
+                }
+            };
+
+            // 使用者在確認畫面按下「確認記帳」之後才真正寫入
+            const commitTransactions = async (rows) => {
+                setIsCommitting(true);
+                try {
+                    const newHistoryItems = [];
+                    const apiPromises = [];
+                    let updatedCategories = categories.map(c => ({ ...c }));
+
+                    for (const tx of rows) {
+                        const targetCat = updatedCategories.find(c => c.id === tx.categoryId);
+                        if (!targetCat) continue;
+
+                        const recordId = Math.random().toString(36).slice(2, 11) + Date.now().toString();
+                        const txDate = tx.date;                       // YYYY-MM-DD
+                        const txMonth = txDate.slice(0, 7);
+
+                        if (txMonth === currentMonth) {
+                            targetCat.spent += tx.amount;
+                            newHistoryItems.push({
+                                id: recordId, date: txDate.replace(/-/g, '/'), month: currentMonth,
+                                item: tx.item, amount: tx.amount,
+                                categoryId: targetCat.id, categoryName: targetCat.name, note: '', matched: true
+                            });
+                        }
+
+                        apiPromises.push(callBackend('addData', {
+                            date: txDate, month: txMonth,
+                            category: targetCat.name, categoryId: targetCat.id,
+                            item: tx.item, amount: tx.amount, note: '', id: recordId
+                        }));
+                    }
+
+                    const apiResults = await Promise.allSettled(apiPromises);
+                    const failedCount = apiResults.filter(r => r.status === 'rejected').length;
+
+                    if (failedCount === apiPromises.length && apiPromises.length > 0) {
+                        // 全部失敗：畫面不要顯示假的成功結果
+                        setLastLog({ msg: '記帳失敗，一筆都沒有存到，請檢查網路後再試一次', type: 'error' });
+                    } else {
+                        setCategories(updatedCategories);
+                        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 200));
+                        const total = rows.reduce((acc, cur) => acc + cur.amount, 0);
+                        if (failedCount > 0) {
+                            setLastLog({ msg: `有 ${failedCount} 筆沒存到，請下拉重整確認`, type: 'error' });
+                        } else {
+                            setLastLog({ msg: `記帳成功！共 ${rows.length} 筆 ($${formatNumber(total)})`, type: 'success' });
+                        }
+                        setInput('');
+                        setPendingTx(null);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setLastLog({ msg: error.message || "記帳失敗", type: 'error' });
+                } finally {
+                    setIsCommitting(false);
                 }
             };
 
@@ -736,10 +900,18 @@
                     <div className="flex-1 overflow-hidden relative">
                         {view === 'budget' && <BudgetView
                             categories={categories}
+                            groups={groups}
+                            unmatched={unmatched}
                             currentMonth={currentMonth}
                             isLoading={isLoading}
                             onRefresh={handleMonthChange}
-                            onEdit={() => { setCategoriesSnapshot(categories.map(c => ({...c}))); setIsEditing(true); }}
+                            onEdit={() => {
+                                setCategoriesSnapshot(categories.map(c => ({ ...c })));
+                                const draft = {};
+                                groups.forEach(g => { draft[g.name] = g.explicit ? g.budget : ''; });
+                                setGroupBudgetDraft(draft);
+                                setIsEditing(true);
+                            }}
                         />}
                         {view === 'history' && <HistoryView
                             history={history}
@@ -748,6 +920,16 @@
                             onEdit={setEditingRecord}
                         />}
                         {view === 'stats' && <div className="p-4 h-full flex flex-col items-center"><h2 className="text-xl font-bold mb-4 w-full px-2 text-amber-900 flex items-center gap-2"><span>📊</span> {currentMonth} 統計</h2><SimplePieChart data={categories.filter(c => c.spent > 0).map(c => ({ name: c.name, value: c.spent }))} /></div>}
+
+                        {pendingTx && (
+                            <ConfirmModal
+                                items={pendingTx}
+                                categories={categories}
+                                isSaving={isCommitting}
+                                onConfirm={commitTransactions}
+                                onCancel={() => setPendingTx(null)}
+                            />
+                        )}
 
                         {editingRecord && (
                             <EditModal
@@ -794,6 +976,42 @@
                                         </div>
                                     ))}
                                     <button onClick={() => setCategories([...categories, { id: Date.now().toString(), name: '新類別', budget: 0, spent: 0, group: '' }])} className="w-full py-3.5 border-2 border-dashed border-amber-200 rounded-2xl text-amber-400 hover:bg-amber-50 transition-colors font-bold flex items-center justify-center gap-2 text-sm"><Icons.Plus /> 新增類別</button>
+
+                                    {/* 群組預算：直接設定整個群組的額度，不用再把金額硬塞在某個類別上 */}
+                                    {[...new Set(categories.map(c => c.group).filter(Boolean))].length > 0 && (
+                                        <div className="pt-4">
+                                            <div className="flex items-center gap-2 mb-1 px-1">
+                                                <div className="text-amber-500"><Icons.Folder /></div>
+                                                <h4 className="font-bold text-sm text-amber-900">群組預算</h4>
+                                            </div>
+                                            <p className="text-xs text-amber-400/90 mb-3 px-1 leading-relaxed">
+                                                填了就用這個數字當整個群組的預算。留白的話，維持用群組內各類別的預算加總。
+                                            </p>
+                                            <div className="space-y-2">
+                                                {[...new Set(categories.map(c => c.group).filter(Boolean))].map(name => {
+                                                    const memberSum = categories.reduce((s, c) => c.group === name ? s + (Number(c.budget) || 0) : s, 0);
+                                                    return (
+                                                        <div key={name} className="bg-white rounded-2xl shadow-sm border border-amber-100 px-4 py-3 flex items-center gap-3">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="font-bold text-gray-800 text-sm truncate">{name}</div>
+                                                                <div className="text-xs text-gray-400">成員加總 ${formatNumber(memberSum)}</div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                                                <span className="text-amber-400 font-bold text-sm">$</span>
+                                                                <input
+                                                                    type="number"
+                                                                    value={groupBudgetDraft[name] === undefined ? '' : groupBudgetDraft[name]}
+                                                                    onChange={e => setGroupBudgetDraft(d => ({ ...d, [name]: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                                                    placeholder={String(memberSum)}
+                                                                    className="w-24 text-right outline-none text-gray-800 font-mono font-bold bg-transparent text-sm placeholder-gray-300"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
