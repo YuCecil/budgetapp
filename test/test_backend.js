@@ -5,6 +5,9 @@
 const fs = require('fs');
 const vm = require('vm');
 
+// 測試用的假通行碼，與實際使用的通行碼無關
+const TEST_TOKEN = 'test-token-do-not-use';
+
 // ---------- 模擬試算表 ----------
 function makeSheet(name, data) {
   const s = {
@@ -120,7 +123,7 @@ function makeSandbox(ss) {
       Session: { getScriptTimeZone: () => 'Asia/Taipei' },
       LockService: { getScriptLock: () => ({ waitLock: () => { }, releaseLock: () => { } }) },
       PropertiesService: {
-        getScriptProperties: () => ({ getProperty: (k) => (k === 'APP_TOKEN' ? 'yellowcow8348' : 'sk-test') }),
+        getScriptProperties: () => ({ getProperty: (k) => (k === 'APP_TOKEN' ? TEST_TOKEN : 'sk-test') }),
       },
       ContentService: {
         createTextOutput: (t) => ({ getContent: () => t, setMimeType: function () { return this; } }),
@@ -142,7 +145,7 @@ function load(ss) {
 
 function call(ctx, action, payload) {
   const res = vm.runInContext(
-    `doPost({postData:{contents: ${JSON.stringify(JSON.stringify(Object.assign({ action, token: 'yellowcow8348' }, payload)))} }})`,
+    `doPost({postData:{contents: ${JSON.stringify(JSON.stringify(Object.assign({ action, token: TEST_TOKEN }, payload)))} }})`,
     ctx
   );
   return JSON.parse(res.getContent());
