@@ -1,10 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-Hant">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- 不再鎖住縮放，讓看不清楚的人可以雙指放大 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>白花嘉麗媽記帳APP</title>
+
+    <!-- 加到主畫面：Android / Chrome 讀 manifest，iOS 讀下面這幾個 meta -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#F59E0B">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="記帳">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -102,6 +113,15 @@
             animation-delay: 250ms;
         }
 
+        /* 加到主畫面後是全螢幕，要自己避開 iPhone 的瀏海與底部的白線 */
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        body {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+
         /* 玻璃質感共用 */
         .glass-panel {
             background: rgba(255, 255, 255, 0.85);
@@ -123,6 +143,8 @@
         // ==========================================
         // 通行碼存放在使用者自己的瀏覽器裡，程式碼中不含任何密碼
         const TOKEN_STORAGE_KEY = 'budgetapp_token';
+        // 單次請求最長等待時間；超過就中止並提示，避免無限轉圈
+        const REQUEST_TIMEOUT_MS = 30000;
         // ==========================================
 
         const { useState, useEffect, useRef, useMemo } = React;
@@ -629,11 +651,28 @@
             const callBackend = async (action, payload = {}) => {
                 if (!GOOGLE_SCRIPT_URL) throw new Error("請在程式碼中設定 Google Script URL");
                 const body = JSON.stringify({ action, token, ...payload });
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST', mode: 'cors', redirect: 'follow',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: body
-                });
+
+                // Google 伺服器偶爾會沒有回應，設定逾時避免畫面無限轉圈
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+                let response;
+                try {
+                    response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST', mode: 'cors', redirect: 'follow',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: body,
+                        signal: controller.signal
+                    });
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        throw new Error(`連線逾時（超過 ${REQUEST_TIMEOUT_MS / 1000} 秒沒有回應），請確認網路後再試一次`);
+                    }
+                    throw new Error("連不上伺服器，請確認網路後再試一次");
+                } finally {
+                    clearTimeout(timer);
+                }
+
                 if (!response.ok) throw new Error("網路連線錯誤");
                 const json = await response.json();
                 if (json.status === 'error') {

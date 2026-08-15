@@ -1,0 +1,33 @@
+{
+  "name": "白花嘉麗媽記帳",
+  "short_name": "記帳",
+  "description": "個人記帳，資料存在 Google 試算表",
+  "lang": "zh-Hant",
+  "dir": "ltr",
+  "start_url": "./Index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFBEB",
+  "theme_color": "#F59E0B",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

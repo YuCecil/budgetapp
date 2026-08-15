@@ -1,0 +1,306 @@
+/**
+ * 在本機模擬 Google Apps Script 環境，驗證後端行為。
+ * 重點驗證「無縫接軌」與「不動到既有資料」。
+ */
+const fs = require('fs');
+const vm = require('vm');
+
+// ---------- 模擬試算表 ----------
+function makeSheet(name, data) {
+  const s = {
+    name,
+    data: data.map(r => r.slice()),
+    getName: () => name,
+    getLastRow: () => s.data.length,
+    getLastColumn: () => s.data.reduce((m, r) => Math.max(m, r.length), 0),
+    getDataRange: () => makeRange(s, 1, 1, s.data.length, s.getLastColumn()),
+    getRange: (r, c, nr, nc) => makeRange(s, r, c, nr === undefined ? 1 : nr, nc === undefined ? 1 : nc),
+    appendRow: (row) => { s.data.push(row.slice()); },
+    insertSheet: null,
+  };
+  return s;
+}
+
+function makeRange(sheet, row, col, numRows, numCols) {
+  const pad = (r, n) => { while (r.length < n) r.push(''); return r; };
+  return {
+    getValues() {
+      const out = [];
+      for (let i = 0; i < numRows; i++) {
+        const src = sheet.data[row - 1 + i] || [];
+        pad(src, col - 1 + numCols);
+        out.push(src.slice(col - 1, col - 1 + numCols));
+      }
+      return out;
+    },
+    setValues(vals) {
+      vals.forEach((rv, i) => {
+        const ri = row - 1 + i;
+        if (!sheet.data[ri]) sheet.data[ri] = [];
+        pad(sheet.data[ri], col - 1 + numCols);
+        rv.forEach((v, j) => { sheet.data[ri][col - 1 + j] = v; });
+      });
+      return this;
+    },
+    setValue(v) { return this.setValues([[v]]); },
+    setFontWeight() { return this; },
+    setBackground() { return this; },
+    setHorizontalAlignment() { return this; },
+    setNumberFormat() { return this; },
+    clearContent() {
+      for (let i = 0; i < numRows; i++) {
+        const ri = row - 1 + i;
+        if (!sheet.data[ri]) continue;
+        for (let j = 0; j < numCols; j++) sheet.data[ri][col - 1 + j] = '';
+      }
+      return this;
+    },
+  };
+}
+
+function makeSpreadsheet(sheets) {
+  const map = {};
+  sheets.forEach(s => { map[s.name] = s; });
+  return {
+    getSheetByName: (n) => map[n] || null,
+    insertSheet: (n) => { const s = makeSheet(n, []); map[n] = s; return s; },
+    _sheets: map,
+  };
+}
+
+// ---------- 建立測試資料（形狀取自真實試算表）----------
+function buildFixture() {
+  const data = makeSheet('記帳資料', [
+    ['登記時間', '消費日期', '月份', '類別', '項目', '金額', '備註', 'ID'],   // 注意：舊格式，只有 8 欄
+    ['2026/05/02 10:20:46', '2026/05/02', '2026/05', '瓦斯費', '瓦斯費', 890, '', 'aaa111'],
+    ['2026/05/02 10:24:35', '2026/05/02', '2026/05', '社交娛樂', '餐費', 480, '', 'bbb222'],
+    ['2026/05/06 07:55:11', '2026/05/06', '2026/05', '房租', '房租', 12000, '', 'ccc333'],
+    ['2026/05/07 07:52:50', '2026/05/07', '2026/05', '餐費', '餐費', 185, '', 'ddd444'],
+    // 沒有編號的列（你資料裡那 32 筆的樣子）
+    ['', '2026/05/07', '2026/05', '餐費', '餐費', 270, '', ''],
+    ['', '2026/05/07', '2026/05', '日用品', '日用品', 128, '', ''],
+    ['', '2026/05/07', '2026/05', '社交娛樂', '餐費', 150, '', ''],
+    // 已刪除的列
+    ['2026/05/08 21:50:55', '2026/05/08', '2026/05', '日用品', '日用品', 783, '(已在 App 刪除)', 'eee555'],
+    // 類別名稱在該月設定裡不存在（孤兒資料）
+    ['2026/05/09 12:24:58', '2026/05/09', '2026/05', '已消失的類別', '某某', 999, '', 'fff666'],
+  ]);
+
+  const config = makeSheet('設定_2026-05', [
+    ['ID', '名稱', '預算', '群組'],   // 注意：舊格式，只有 4 欄
+    ['1770447359697', '房租', 12000, ''],
+    ['1770447415265', '餐費', 8000, ''],
+    ['1777688215582', '瓦斯費', 0, '變動費'],
+    ['1770804492195', '社交娛樂', 0, '變動費'],
+    ['1770804506364', '日用品', 0, '變動費'],
+    ['1770804479798', '水費', 15223, '變動費'],
+  ]);
+
+  return makeSpreadsheet([data, config]);
+}
+
+// ---------- 模擬 GAS 全域物件 ----------
+function makeSandbox(ss) {
+  const logs = [];
+  return {
+    logs,
+    ctx: vm.createContext({
+      SpreadsheetApp: {
+        getActiveSpreadsheet: () => ss,
+        flush: () => { },
+      },
+      Utilities: {
+        formatDate: (d, tz, fmt) => {
+          const p = n => String(n).padStart(2, '0');
+          if (fmt === 'yyyy-MM') return `${d.getFullYear()}-${p(d.getMonth() + 1)}`;
+          if (fmt === 'yyyy/MM/dd') return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
+          return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} 00:00:00`;
+        },
+      },
+      Session: { getScriptTimeZone: () => 'Asia/Taipei' },
+      LockService: { getScriptLock: () => ({ waitLock: () => { }, releaseLock: () => { } }) },
+      PropertiesService: {
+        getScriptProperties: () => ({ getProperty: (k) => (k === 'APP_TOKEN' ? 'yellowcow8348' : 'sk-test') }),
+      },
+      ContentService: {
+        createTextOutput: (t) => ({ getContent: () => t, setMimeType: function () { return this; } }),
+        MimeType: { JSON: 'json' },
+      },
+      UrlFetchApp: { fetch: () => { throw new Error('not used'); } },
+      Logger: { log: (m) => logs.push(String(m)) },
+      console,
+      Date, Math, JSON, String, Number, Object, Array, isFinite, parseInt,
+    }),
+  };
+}
+
+function load(ss) {
+  const box = makeSandbox(ss);
+  vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8'), box.ctx);
+  return box;
+}
+
+function call(ctx, action, payload) {
+  const res = vm.runInContext(
+    `doPost({postData:{contents: ${JSON.stringify(JSON.stringify(Object.assign({ action, token: 'yellowcow8348' }, payload)))} }})`,
+    ctx
+  );
+  return JSON.parse(res.getContent());
+}
+
+// ---------- 測試 ----------
+let pass = 0, fail = 0;
+function check(label, cond, extra) {
+  if (cond) { console.log('  ✅ ' + label); pass++; }
+  else { console.log('  ❌ ' + label + (extra ? '  → ' + extra : '')); fail++; }
+}
+
+console.log('\n【測試 1】舊資料（沒有類別ID、設定只有4欄）能否照常運作 — 無縫接軌');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+  const r = call(box.ctx, 'getData', { month: '2026-05' });
+  const cat = n => r.categories.find(c => c.name === n);
+
+  check('餐費 = 185 + 270 = 455', cat('餐費').spent === 455, '實際 ' + cat('餐費').spent);
+  check('社交娛樂 = 480 + 150 = 630', cat('社交娛樂').spent === 630, '實際 ' + cat('社交娛樂').spent);
+  check('房租 = 12000', cat('房租').spent === 12000, '實際 ' + cat('房租').spent);
+  check('已刪除的 783 沒有被算進去', cat('日用品').spent === 128, '實際 ' + cat('日用品').spent);
+  check('對不到類別的 999 被回報而非默默消失', r.unmatched.count === 1 && r.unmatched.total === 999,
+    JSON.stringify(r.unmatched));
+  check('群組「變動費」沒設群組預算時，退回成員加總 15223',
+    r.groups.find(g => g.name === '變動費').budget === 15223,
+    JSON.stringify(r.groups));
+}
+
+console.log('\n【測試 2】沒有編號的資料列 — 刪除/修改必須被擋下，不能亂刪');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+  const before = JSON.stringify(ss._sheets['記帳資料'].data);
+
+  const d1 = call(box.ctx, 'deleteData', { id: '' });
+  const d2 = call(box.ctx, 'deleteData', {});
+  const u1 = call(box.ctx, 'updateData', { id: '', amount: 1, item: 'x' });
+
+  check('空字串編號的刪除被拒絕', d1.status === 'error');
+  check('完全沒帶編號的刪除被拒絕', d2.status === 'error');
+  check('空字串編號的修改被拒絕', u1.status === 'error');
+  check('資料完全沒被動到', JSON.stringify(ss._sheets['記帳資料'].data) === before);
+
+  const ok = call(box.ctx, 'deleteData', { id: 'aaa111' });
+  check('正常編號的刪除仍可運作', ok.status === 'deleted', JSON.stringify(ok));
+}
+
+console.log('\n【測試 3】資料整理 — 只補空格，絕不改動帳目內容');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+  const sheet = ss._sheets['記帳資料'];
+  const snapshot = sheet.data.map(r => r.slice());
+
+  vm.runInContext('migrate_2_Apply()', box.ctx);
+
+  const COLS = { TIME: 0, DATE: 1, MONTH: 2, CAT: 3, ITEM: 4, AMOUNT: 5, NOTE: 6, ID: 7, CATID: 8 };
+  let untouched = true, detail = '';
+  for (let i = 1; i < snapshot.length; i++) {
+    [COLS.TIME, COLS.DATE, COLS.MONTH, COLS.CAT, COLS.ITEM, COLS.AMOUNT, COLS.NOTE].forEach(c => {
+      if (String(snapshot[i][c] ?? '') !== String(sheet.data[i][c] ?? '')) {
+        untouched = false;
+        detail += `第${i + 1}列第${c + 1}欄 "${snapshot[i][c]}"→"${sheet.data[i][c]}" `;
+      }
+    });
+  }
+  check('登記時間/日期/月份/類別/項目/金額/備註 全部沒變', untouched, detail);
+
+  const blanks = sheet.data.slice(1).filter(r => !String(r[COLS.ID] || '').trim());
+  check('所有資料列都有編號了', blanks.length === 0, '仍有 ' + blanks.length + ' 筆空白');
+
+  const ids = sheet.data.slice(1).map(r => String(r[COLS.ID]));
+  check('編號沒有重複', new Set(ids).size === ids.length);
+
+  const withCat = sheet.data.slice(1).filter(r => String(r[COLS.CATID] || '').trim());
+  // fixture 共 9 列資料，其中 1 列的類別在設定裡不存在（孤兒），所以應補上 8 筆
+  check('能對到類別的 8 列都補上了類別ID（1 筆孤兒維持空白）',
+    withCat.length === 8, '實際 ' + withCat.length);
+
+  check('標題列補上了「類別ID」', sheet.data[0][COLS.CATID] === '類別ID', String(sheet.data[0][COLS.CATID]));
+
+  // 整理後，金額統計必須跟整理前完全一致
+  const r2 = call(box.ctx, 'getData', { month: '2026-05' });
+  const c = n => r2.categories.find(x => x.name === n).spent;
+  check('整理後：餐費仍是 455', c('餐費') === 455, '實際 ' + c('餐費'));
+  check('整理後：社交娛樂仍是 630', c('社交娛樂') === 630, '實際 ' + c('社交娛樂'));
+  check('整理後：日用品仍是 128', c('日用品') === 128, '實際 ' + c('日用品'));
+}
+
+console.log('\n【測試 4】類別改名之後，花費還在不在 — 這是那 674 元的根治測試');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+
+  // 先整理（補上類別ID）
+  vm.runInContext('migrate_2_Apply()', box.ctx);
+
+  const before = call(box.ctx, 'getData', { month: '2026-05' });
+  const beforeSpent = before.categories.find(c => c.name === '社交娛樂').spent;
+
+  // 模擬使用者把「社交娛樂」改名成「社交娛樂費」
+  const cfg = ss._sheets['設定_2026-05'];
+  const row = cfg.data.find(r => r[1] === '社交娛樂');
+  row[1] = '社交娛樂費';
+
+  const after = call(box.ctx, 'getData', { month: '2026-05' });
+  const afterCat = after.categories.find(c => c.name === '社交娛樂費');
+
+  check('改名前 社交娛樂 = 630', beforeSpent === 630, '實際 ' + beforeSpent);
+  check('改名後 花費完整保留 = 630 (舊版會變成 0)', afterCat.spent === 630, '實際 ' + afterCat.spent);
+  check('改名後沒有產生任何對不到的花費', after.unmatched.total === 999,
+    '應該只剩原本那筆孤兒 999，實際 ' + after.unmatched.total);
+}
+
+console.log('\n【測試 5】群組預算 — 可以直接設定，不用再硬塞在水費');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+
+  const r0 = call(box.ctx, 'getData', { month: '2026-05' });
+  const cats = r0.categories.map(c => ({ id: c.id, name: c.name, budget: c.budget, group: c.group }));
+
+  // 把水費的 15223 歸零，改成直接設定群組預算
+  cats.find(c => c.name === '水費').budget = 0;
+  const saved = call(box.ctx, 'saveConfig', {
+    month: '2026-05',
+    categories: cats,
+    groupBudgets: { '變動費': 15223 },
+  });
+  check('設定儲存成功', saved.status === 'saved', JSON.stringify(saved));
+
+  const r1 = call(box.ctx, 'getData', { month: '2026-05' });
+  const g = r1.groups.find(x => x.name === '變動費');
+  check('群組預算 = 15223（明確設定）', g.budget === 15223 && g.explicit === true, JSON.stringify(g));
+  check('水費本身的預算已歸零', r1.categories.find(c => c.name === '水費').budget === 0);
+  check('其他類別的花費統計不受影響', r1.categories.find(c => c.name === '餐費').spent === 455);
+}
+
+console.log('\n【測試 6】金額防呆');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+  const rowsBefore = ss._sheets['記帳資料'].data.length;
+
+  check('文字金額被拒絕', call(box.ctx, 'addData', { item: 'x', amount: 'abc', month: '2026-05', category: '餐費' }).status === 'error');
+  check('缺項目被拒絕', call(box.ctx, 'addData', { amount: 100, month: '2026-05', category: '餐費' }).status === 'error');
+  check('沒有寫入任何爛資料', ss._sheets['記帳資料'].data.length === rowsBefore);
+
+  const good = call(box.ctx, 'addData', { item: '早餐', amount: '65', month: '2026-05', category: '餐費', categoryId: '1770447415265', date: '2026-05-15', id: 'newid1' });
+  check('字串數字 "65" 被正確轉成數字並寫入', good.status === 'success');
+  const last = ss._sheets['記帳資料'].data[ss._sheets['記帳資料'].data.length - 1];
+  check('寫入的金額是數字 65', last[5] === 65, typeof last[5] + ' ' + last[5]);
+  check('寫入了類別ID', last[8] === '1770447415265', String(last[8]));
+}
+
+console.log('\n' + '='.repeat(52));
+console.log(`通過 ${pass} 項，失敗 ${fail} 項`);
+console.log('='.repeat(52));
+process.exit(fail ? 1 : 0);

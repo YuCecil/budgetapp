@@ -1,0 +1,9 @@
+{
+  "name": "budgetapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "白花嘉麗媽記帳 App",
+  "scripts": {
+    "test": "node test/test_backend.js"
+  }
+}
