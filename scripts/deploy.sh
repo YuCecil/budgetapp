@@ -10,24 +10,15 @@ if [ ! -f .clasp.json ]; then
   exit 1
 fi
 
-if [ ! -f .deployment-id ]; then
-  echo "❌ 找不到 .deployment-id"
-  echo "   執行 npx clasp list-deployments 找到你的部署 ID，存進這個檔案："
-  echo "   echo 'AKfycb...' > .deployment-id"
-  exit 1
-fi
-
-DEPLOY_ID="$(tr -d '[:space:]' < .deployment-id)"
-
-echo "▸ 1/4 跑測試"
+echo "▸ 1/3 跑測試"
 npm test --silent
 
 echo
-echo "▸ 2/4 上傳程式碼到 Apps Script"
+echo "▸ 2/3 上傳程式碼到 Apps Script"
 npx clasp push --force
 
 echo
-echo "▸ 3/4 建立新版本"
+echo "▸ 3/3 建立新版本"
 DESC="${1:-deploy $(date '+%Y-%m-%d %H:%M')}"
 VERSION="$(npx clasp create-version "$DESC" --json 2>/dev/null | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).versionNumber' 2>/dev/null || true)"
 
@@ -38,8 +29,12 @@ fi
 echo "  版本 $VERSION"
 
 echo
-echo "▸ 4/4 更新線上部署（網址不變）"
-npx clasp update-deployment "$DEPLOY_ID" -V "$VERSION" -d "$DESC"
-
+echo "──────────────────────────────────────────────"
+echo "✅ 程式碼已上傳，版本 $VERSION 已建立。"
 echo
-echo "✅ 完成。線上跑的已經是最新的程式碼了。"
+echo "⚠️  最後一步請到網頁介面完成（這一步不能用指令代替）："
+echo "   部署 → 管理部署作業 → ✏️ 編輯 → 版本選 $VERSION → 部署"
+echo
+echo "   原因：用 API 更新部署會把「任何人都能存取」的設定清掉，"
+echo "   導致 App 對所有人回傳 403。"
+echo "──────────────────────────────────────────────"
