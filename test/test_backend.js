@@ -391,6 +391,54 @@ console.log('\n【測試 7】AI 拆解 — 模型設定、結構化輸出、壞�
   check('API 失敗時回報錯誤', r.status === 'error' && /server error/.test(r.message), JSON.stringify(r).slice(0, 120));
 }
 
+
+console.log('\n【測試 8】「餐費200+300+58」這種寫法');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+
+  const ok = (txs) => ({
+    getResponseCode: () => 200,
+    getContentText: () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ transactions: txs }) } }] }),
+  });
+
+  // 提示詞要明確告訴模型怎麼理解加號
+  globalThis.__fetchCalls = [];
+  globalThis.__fetchReply = () => ok([
+    { item: '餐費', amount: 200, categoryId: '1', date: '2026/05/15' },
+    { item: '餐費', amount: 300, categoryId: '1', date: '2026/05/15' },
+    { item: '餐費', amount: 58, categoryId: '1', date: '2026/05/15' },
+  ]);
+  let r = call(box.ctx, 'analyze', { text: '餐費200+300+58', categories: [{ id: '1', name: '餐費' }], currentDate: '2026/05/15' });
+  const prompt = globalThis.__fetchCalls[0].body.messages[0].content;
+
+  check('提示詞有說明加號代表分開的多筆', prompt.includes('THREE transactions of 200, 300 and 58'));
+  check('提示詞有禁止回傳算式', prompt.includes('Never return an expression'));
+  check('提示詞有涵蓋空白分隔的寫法', prompt.includes('"餐費 200 300 58"'));
+  check('三筆都被正確解析', r.data.transactions.length === 3, '得到 ' + r.data.transactions.length + ' 筆');
+  check('金額分別是 200 / 300 / 58',
+    r.data.transactions.map(t => t.amount).join(',') === '200,300,58',
+    r.data.transactions.map(t => t.amount).join(','));
+
+  // 降級路徑：模型硬是回傳字串算式時，加總而不是整筆丟掉
+  const box2 = load(buildFixture());
+  globalThis.__fetchReply = () => ok([{ item: '餐費', amount: '200+300+58', categoryId: '1', date: '2026/05/15' }]);
+  r = call(box2.ctx, 'analyze', { text: '餐費200+300+58', categories: [{ id: '1', name: '餐費' }], currentDate: '2026/05/15' });
+  check('字串算式會被加總成 558 而不是消失',
+    r.data.transactions.length === 1 && r.data.transactions[0].amount === 558,
+    JSON.stringify(r.data.transactions));
+
+  // 真正無效的字串仍然要被剔除，不能誤判
+  const box3 = load(buildFixture());
+  globalThis.__fetchReply = () => ok([
+    { item: 'a', amount: '200+abc', categoryId: '1', date: '2026/05/15' },
+    { item: 'b', amount: '1+2+3', categoryId: '1', date: '2026/05/15' },
+  ]);
+  r = call(box3.ctx, 'analyze', { text: 'x', categories: [{ id: '1', name: '餐費' }], currentDate: '2026/05/15' });
+  check('含文字的算式仍被剔除', r.data.transactions.length === 1, JSON.stringify(r.data.transactions));
+  check('合法算式 1+2+3 = 6', r.data.transactions[0].amount === 6, String(r.data.transactions[0].amount));
+}
+
 console.log('\n' + '='.repeat(52));
 console.log(`通過 ${pass} 項，失敗 ${fail} 項`);
 console.log('='.repeat(52));

@@ -102,8 +102,17 @@ function _normMonth(raw) {
 
 function _toAmount(value) {
     var n = Number(value);
-    if (!isFinite(n)) return null;
-    return n;
+    if (isFinite(n)) return n;
+
+    // 保險：降級到 json_object 時，模型仍可能把「200+300+58」原封不動當成字串回傳。
+    // 只認純粹由數字與加號組成的字串，加總後回傳，總比整筆丟掉好。
+    if (typeof value === 'string' && /^\s*\d+(\.\d+)?(\s*\+\s*\d+(\.\d+)?)+\s*$/.test(value)) {
+        var sum = 0;
+        value.split('+').forEach(function (part) { sum += Number(part); });
+        if (isFinite(sum)) return sum;
+    }
+
+    return null;
 }
 
 function _newId() {
@@ -144,6 +153,12 @@ function _analyzeText(text, categories, currentDateStr) {
         "Example: text \"餐費 480\" with a category named \"餐費\" MUST map to 餐費, never to a different category.\n" +
         "- Do not merge distinct categories. 餐費 (food) is never 社交娛樂 (social/entertainment).\n" +
         "- Only guess when the text gives no direct category match.\n\n" +
+        "IMPORTANT amount rules:\n" +
+        "- amount MUST be a plain number. Never return an expression or a string.\n" +
+        "- Numbers joined by \"+\" are SEPARATE purchases in the same category, one transaction each. " +
+        "Example: \"餐費200+300+58\" is THREE transactions of 200, 300 and 58 — never one of 558.\n" +
+        "- The same applies to several numbers listed after one category name: " +
+        "\"餐費 200 300 58\" is also three transactions.\n\n" +
         "Return JSON: { \"transactions\": [ { \"amount\": number, \"categoryId\": \"id\", \"item\": \"string\", \"date\": \"YYYY/MM/DD\" }, ... ] }";
 
     // 模型可在「指令碼屬性」用 OPENAI_MODEL 覆寫，不用改程式碼就能換
