@@ -56,7 +56,7 @@ done
 if [ -n "$OK" ]; then
   echo "  ✅ 線上正常回應，匿名可存取"
   echo
-  echo "✅ 完成。跑的是版本 $VERSION。"
+  echo "✅ 完成。跑的是版本 ${VERSION}。"
 else
   echo "  ❌ 線上沒有正常回應！App 可能對所有人壞掉了。"
   echo
