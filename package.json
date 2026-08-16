@@ -4,6 +4,8 @@
   "private": true,
   "description": "白花嘉麗媽記帳 App",
   "scripts": {
-    "test": "node test/test_backend.js"
+    "test": "node test/test_backend.js",
+    "deploy": "bash scripts/deploy.sh",
+    "push": "clasp push"
   }
 }

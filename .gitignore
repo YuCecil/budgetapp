@@ -1,3 +1,4 @@
 .DS_Store
 .clasp.json
+.deployment-id
 node_modules/

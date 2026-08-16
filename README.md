@@ -59,22 +59,38 @@ npm test          # 跑後端測試（改 apps-script/Code.js 之後務必跑一
 
 ### 部署後端
 
-裝好 [clasp](https://github.com/google/clasp) 之後可以用指令推送：
-
 ```bash
-npm install -g @google/clasp
-clasp login
-cp .clasp.json.example .clasp.json     # 填入你的 scriptId
-clasp push
+npm run deploy              # 跑測試 → 上傳 → 建版本 → 更新線上部署
+npm run deploy "修了xxx"     # 也可以自己寫版本說明
 ```
 
-`scriptId` 在 Apps Script 編輯器網址列裡：
+一行完成，網址不會變。測試沒過會直接中斷，不會把壞掉的程式碼推上去。
+
+#### 第一次設定（只要做一次）
+
+```bash
+clasp login                          # 開瀏覽器授權 Google 帳號
+```
+
+還要到 <https://script.google.com/home/usersettings> 把
+**「Google Apps Script API」打開**，否則 clasp 無法連線。
+
+接著建立兩個設定檔（都已列入 .gitignore，不會上傳）：
+
+```bash
+cp .clasp.json.example .clasp.json    # 填入 scriptId
+clasp list-deployments                # 查出部署 ID
+echo 'AKfycb...' > .deployment-id     # 存起來
+```
+
+`scriptId` 在 Apps Script 編輯器的網址列裡：
 `script.google.com/home/projects/<scriptId>/edit`
 
-> `clasp push` 只會更新程式碼，**不會**重新部署。改完仍要到
-> 「部署 → 管理部署作業 → ✏️ 編輯 → 版本選新版本 → 部署」才會生效。
+#### 不想用 clasp
 
-沒有裝 clasp 的話，就把 `apps-script/Code.js` 全部複製貼到 Apps Script 編輯器裡。
+把 `apps-script/Code.js` 全部複製貼到 Apps Script 編輯器，存檔後到
+「部署 → 管理部署作業 → ✏️ 編輯 → 版本選新版本 → 部署」。
+**漏掉最後那步的話，改動不會生效。**
 
 ### 部署前端
 
