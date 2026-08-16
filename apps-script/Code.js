@@ -23,6 +23,12 @@
 // 因此舊資料不需要先轉檔也能正常運作。
 // ==========================================
 
+// 拆解記帳文字用的模型。
+// gpt-5.6-luna 是目前世代裡專為「低延遲、高流量」設計的一款，
+// 每次記帳成本約 0.0001 美元，一個月兩百筆不到 0.02 美元。
+// 想換模型不用改這裡：到「指令碼屬性」新增 OPENAI_MODEL 就會覆寫。
+var DEFAULT_MODEL = "gpt-5.6-luna";
+
 var DATA_HEADERS = ["登記時間", "消費日期", "月份", "類別", "項目", "金額", "備註", "ID", "類別ID"];
 var CONFIG_HEADERS = ["ID", "名稱", "預算", "群組", "群組預算"];
 
@@ -140,28 +146,79 @@ function _analyzeText(text, categories, currentDateStr) {
         "- Only guess when the text gives no direct category match.\n\n" +
         "Return JSON: { \"transactions\": [ { \"amount\": number, \"categoryId\": \"id\", \"item\": \"string\", \"date\": \"YYYY/MM/DD\" }, ... ] }";
 
-    var url = "https://api.openai.com/v1/chat/completions";
+    // 模型可在「指令碼屬性」用 OPENAI_MODEL 覆寫，不用改程式碼就能換
+    var model = _getConfig('OPENAI_MODEL') || DEFAULT_MODEL;
+
+    var messages = [{ role: "user", content: prompt }];
+
+    // 首選：用 json_schema 讓 API 保證回傳的結構正確，而不是「請模型盡量照做」
     var payload = {
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt + " Return JSON only." }],
+        model: model,
+        messages: messages,
+        reasoning_effort: "low",   // 夠它把分類想清楚，又不會拖慢回應
+        response_format: {
+            type: "json_schema",
+            json_schema: {
+                name: "transactions",
+                strict: true,
+                schema: {
+                    type: "object",
+                    properties: {
+                        transactions: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    item: { type: "string" },
+                                    amount: { type: "number" },
+                                    categoryId: { type: "string" },
+                                    date: { type: "string" }
+                                },
+                                required: ["item", "amount", "categoryId", "date"],
+                                additionalProperties: false
+                            }
+                        }
+                    },
+                    required: ["transactions"],
+                    additionalProperties: false
+                }
+            }
+        }
+    };
+
+    // 備援：萬一該模型不支援上面的參數，改用相容性最好的舊寫法再試一次，
+    // 這樣就算之後換成別的模型也不會整個壞掉。
+    var fallbackPayload = {
+        model: model,
+        messages: messages,
         response_format: { type: "json_object" }
     };
 
-    var options = {
-        method: "post",
-        contentType: "application/json",
-        headers: { "Authorization": "Bearer " + OPENAI_API_KEY },
-        payload: JSON.stringify(payload),
-        muteHttpExceptions: true
-    };
+    function send(body) {
+        return UrlFetchApp.fetch("https://api.openai.com/v1/chat/completions", {
+            method: "post",
+            contentType: "application/json",
+            headers: { "Authorization": "Bearer " + OPENAI_API_KEY },
+            payload: JSON.stringify(body),
+            muteHttpExceptions: true
+        });
+    }
 
     try {
-        var response = UrlFetchApp.fetch(url, options);
+        var response = send(payload);
         var responseCode = response.getResponseCode();
+
+        if (responseCode === 400) {
+            // 參數不被接受（例如換了不支援 json_schema 的模型）→ 退回舊寫法
+            response = send(fallbackPayload);
+            responseCode = response.getResponseCode();
+        }
+
         var responseBody = JSON.parse(response.getContentText());
 
         if (responseCode !== 200) {
-            return _jsonResponse({ status: 'error', message: 'OpenAI Error: ' + (responseBody.error ? responseBody.error.message : 'Unknown') });
+            var msg = responseBody.error ? responseBody.error.message : 'Unknown';
+            return _jsonResponse({ status: 'error', message: 'OpenAI 錯誤 (' + model + '): ' + msg });
         }
 
         var content = responseBody.choices[0].message.content;

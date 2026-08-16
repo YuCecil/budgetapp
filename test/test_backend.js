@@ -123,13 +123,25 @@ function makeSandbox(ss) {
       Session: { getScriptTimeZone: () => 'Asia/Taipei' },
       LockService: { getScriptLock: () => ({ waitLock: () => { }, releaseLock: () => { } }) },
       PropertiesService: {
-        getScriptProperties: () => ({ getProperty: (k) => (k === 'APP_TOKEN' ? TEST_TOKEN : 'sk-test') }),
+        getScriptProperties: () => ({
+          getProperty: (k) => {
+            if (k === 'APP_TOKEN') return TEST_TOKEN;
+            if (k === 'OPENAI_API_KEY') return 'sk-test';
+            return null;          // 其餘屬性（例如 OPENAI_MODEL）預設沒有設定
+          },
+        }),
       },
       ContentService: {
         createTextOutput: (t) => ({ getContent: () => t, setMimeType: function () { return this; } }),
         MimeType: { JSON: 'json' },
       },
-      UrlFetchApp: { fetch: () => { throw new Error('not used'); } },
+      UrlFetchApp: {
+        fetch: (url, opts) => {
+          const calls = (globalThis.__fetchCalls = globalThis.__fetchCalls || []);
+          calls.push({ url, body: JSON.parse(opts.payload) });
+          return globalThis.__fetchReply(calls.length, JSON.parse(opts.payload));
+        },
+      },
       Logger: { log: (m) => logs.push(String(m)) },
       console,
       Date, Math, JSON, String, Number, Object, Array, isFinite, parseInt,
@@ -301,6 +313,82 @@ console.log('\n【測試 6】金額防呆');
   const last = ss._sheets['記帳資料'].data[ss._sheets['記帳資料'].data.length - 1];
   check('寫入的金額是數字 65', last[5] === 65, typeof last[5] + ' ' + last[5]);
   check('寫入了類別ID', last[8] === '1770447415265', String(last[8]));
+}
+
+
+console.log('\n【測試 7】AI 拆解 — 模型設定、結構化輸出、壞資料防呆');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+
+  const ok = (txs) => ({
+    getResponseCode: () => 200,
+    getContentText: () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ transactions: txs }) } }] }),
+  });
+
+  // --- 正常情況 ---
+  globalThis.__fetchCalls = [];
+  globalThis.__fetchReply = () => ok([
+    { item: '早餐', amount: 65, categoryId: '1770447415265', date: '2026/05/15' },
+  ]);
+  let r = call(box.ctx, 'analyze', { text: '早餐65', categories: [{ id: '1770447415265', name: '餐費' }], currentDate: '2026/05/15' });
+  let sent = globalThis.__fetchCalls[0].body;
+
+  check('用的是 gpt-5.6-luna', sent.model === 'gpt-5.6-luna', sent.model);
+  check('有帶 reasoning_effort', sent.reasoning_effort === 'low', String(sent.reasoning_effort));
+  check('用 json_schema 強制回傳結構', sent.response_format.type === 'json_schema', sent.response_format.type);
+  check('schema 為 strict', sent.response_format.json_schema.strict === true);
+  check('沒有帶 GPT-5 不支援的 temperature', sent.temperature === undefined);
+  check('沒有帶已淘汰的 max_tokens', sent.max_tokens === undefined);
+  check('提示詞裡的星期正確 (2026/05/15 是星期五)',
+    sent.messages[0].content.includes('星期五'), sent.messages[0].content.slice(0, 40));
+  check('成功解析出交易', r.status === 'success' && r.data.transactions.length === 1, JSON.stringify(r).slice(0, 120));
+
+  // --- 模型可用指令碼屬性覆寫 ---
+  const box2 = load(buildFixture());
+  vm.runInContext("PropertiesService.getScriptProperties = () => ({ getProperty: (k) => k === 'APP_TOKEN' ? TEST_TOKEN_X : (k === 'OPENAI_MODEL' ? 'gpt-5.6-terra' : 'sk-test') });", box2.ctx);
+  vm.runInContext(`TEST_TOKEN_X = ${JSON.stringify(TEST_TOKEN)};`, box2.ctx);
+  globalThis.__fetchCalls = [];
+  call(box2.ctx, 'analyze', { text: 'x 1', categories: [{ id: '1', name: 'A' }], currentDate: '2026/05/15' });
+  check('OPENAI_MODEL 可覆寫預設模型',
+    globalThis.__fetchCalls[0].body.model === 'gpt-5.6-terra', globalThis.__fetchCalls[0].body.model);
+
+  // --- 400 時自動退回相容寫法 ---
+  const box3 = load(buildFixture());
+  globalThis.__fetchCalls = [];
+  globalThis.__fetchReply = (n) => n === 1
+    ? { getResponseCode: () => 400, getContentText: () => JSON.stringify({ error: { message: 'Unsupported parameter' } }) }
+    : ok([{ item: '早餐', amount: 65, categoryId: '1', date: '2026/05/15' }]);
+  r = call(box3.ctx, 'analyze', { text: '早餐65', categories: [{ id: '1', name: '餐費' }], currentDate: '2026/05/15' });
+  check('第一次 400 會自動重試', globalThis.__fetchCalls.length === 2, '呼叫了 ' + globalThis.__fetchCalls.length + ' 次');
+  check('重試時改用相容的 json_object',
+    globalThis.__fetchCalls[1].body.response_format.type === 'json_object',
+    globalThis.__fetchCalls[1].body.response_format.type);
+  check('重試時不再帶 reasoning_effort', globalThis.__fetchCalls[1].body.reasoning_effort === undefined);
+  check('退回之後仍然成功', r.status === 'success', JSON.stringify(r).slice(0, 100));
+
+  // --- 壞資料防呆 ---
+  const box4 = load(buildFixture());
+  globalThis.__fetchCalls = [];
+  globalThis.__fetchReply = () => ok([
+    { item: '早餐', amount: '65', categoryId: '1', date: '2026/05/15' },   // 字串金額
+    { item: '壞的', amount: 'abc', categoryId: '1', date: '2026/05/15' },  // 無效金額
+    { item: '', amount: 30, categoryId: '1', date: '2026/05/15' },         // 沒有項目名稱
+  ]);
+  r = call(box4.ctx, 'analyze', { text: 'x', categories: [{ id: '1', name: '餐費' }], currentDate: '2026/05/15' });
+  const txs = r.data.transactions;
+  check('無效金額的那筆被剔除', txs.length === 2, '剩下 ' + txs.length + ' 筆');
+  check('字串 "65" 被轉成數字 65', txs[0].amount === 65 && typeof txs[0].amount === 'number', typeof txs[0].amount);
+  check('空白項目補上預設名稱', txs[1].item === '未命名', txs[1].item);
+
+  // --- 兩次都失敗時要回報錯誤，不能假裝成功 ---
+  const box5 = load(buildFixture());
+  globalThis.__fetchReply = () => ({
+    getResponseCode: () => 500,
+    getContentText: () => JSON.stringify({ error: { message: 'server error' } }),
+  });
+  r = call(box5.ctx, 'analyze', { text: 'x', categories: [{ id: '1', name: 'A' }], currentDate: '2026/05/15' });
+  check('API 失敗時回報錯誤', r.status === 'error' && /server error/.test(r.message), JSON.stringify(r).slice(0, 120));
 }
 
 console.log('\n' + '='.repeat(52));
