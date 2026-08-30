@@ -133,6 +133,9 @@
         // ==========================================
         // 通行碼存放在使用者自己的瀏覽器裡，程式碼中不含任何密碼
         const TOKEN_STORAGE_KEY = 'budgetapp_token';
+        // 上次讀到的資料存在瀏覽器裡，下次開啟先用它把畫面畫出來，不用空等雲端
+        const CACHE_KEY = 'budgetapp_cache_v1';
+        const CACHE_KEEP_MONTHS = 4;
         // 單次請求最長等待時間；超過就中止並提示，避免無限轉圈
         const REQUEST_TIMEOUT_MS = 30000;
         // ==========================================
@@ -154,6 +157,33 @@
             Refresh: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>,
             Cloud: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>,
             Folder: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        };
+
+        // --- 本機快取 ---
+        // localStorage 在無痕視窗或關閉網站資料時會直接丟例外，所以每個存取都要包起來，
+        // 讀不到就當作沒有快取，App 照常運作。
+        const readCache = (month) => {
+            try {
+                const all = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+                return all[month] || null;
+            } catch (e) { return null; }
+        };
+
+        const writeCache = (month, data) => {
+            try {
+                const all = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+                all[month] = {
+                    categories: data.categories || [],
+                    groups: data.groups || [],
+                    history: data.history || [],
+                    unmatched: data.unmatched || null,
+                    savedAt: Date.now()
+                };
+                // 只留最近幾個月，免得 localStorage 隨著時間無限長大
+                const kept = {};
+                Object.keys(all).sort().slice(-CACHE_KEEP_MONTHS).forEach(k => { kept[k] = all[k]; });
+                localStorage.setItem(CACHE_KEY, JSON.stringify(kept));
+            } catch (e) { }
         };
 
         const COLORS = ['#F59E0B', '#D97706', '#B45309', '#78350F', '#FCD34D', '#84CC16', '#10B981'];
@@ -585,14 +615,18 @@
         };
 
         // 獨立出來的 HistoryView，避免在 App 內部定義導致的渲染問題
-        const HistoryView = ({ history, currentMonth, onDelete, onEdit }) => {
+        const HistoryView = ({ history, currentMonth, isLoading, onDelete, onEdit }) => {
             // 安全檢查：如果 history 不是陣列，則視為空陣列，防止當機
             const safeHistory = Array.isArray(history) ? history : [];
 
             return (
                 <div className="p-4 pb-24 h-full overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4 px-2 text-amber-900 flex items-center gap-2 animate-fade-in-up"><span>📜</span> {currentMonth} 紀錄</h2>
-                    {safeHistory.length === 0 ? <div className="text-center text-gray-400 mt-20 flex flex-col gap-2 animate-fade-in-up stagger-1"><div className="text-4xl mb-2">🍃</div><span>本月暫無紀錄，來記一筆吧！</span></div> : (
+                    {safeHistory.length === 0 ? (
+                        isLoading
+                            ? <div className="text-center text-amber-600 text-xs mt-20 animate-pulse">正在讀取 {currentMonth} 資料...</div>
+                            : <div className="text-center text-gray-400 mt-20 flex flex-col gap-2 animate-fade-in-up stagger-1"><div className="text-4xl mb-2">🍃</div><span>本月暫無紀錄，來記一筆吧！</span></div>
+                    ) : (
                         <div className="space-y-3">
                             {safeHistory.map((record, index) => {
                                 const noId = !record.id;
@@ -623,7 +657,7 @@
         };
 
         // 獨立出來的 BudgetView
-        const BudgetView = ({ categories, groups: groupInfo, unmatched, currentMonth, isLoading, onRefresh, onEdit }) => {
+        const BudgetView = ({ categories, groups: groupInfo, unmatched, currentMonth, isLoading, fromCache, onRefresh, onEdit }) => {
             // 群組若有「明確設定的預算」就用它，否則退回成員預算加總（維持舊行為）
             const explicitBudget = {};
             (groupInfo || []).forEach(g => { if (g.explicit) explicitBudget[g.name] = g.budget; });
@@ -712,7 +746,11 @@
 
             return (
                 <div className="space-y-3 pb-24 p-4 overflow-y-auto h-full">
-                    {isLoading && <div className="text-center p-2 text-amber-600 text-xs animate-pulse">正在讀取 {currentMonth} 資料...</div>}
+                    {isLoading && (
+                        <div className="text-center p-2 text-amber-600 text-xs animate-pulse">
+                            {fromCache ? `顯示上次的資料，正在更新 ${currentMonth}...` : `正在讀取 ${currentMonth} 資料...`}
+                        </div>
+                    )}
 
                     {unmatched && unmatched.count > 0 && (
                         <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-3.5 text-xs animate-fade-in-up">
@@ -809,8 +847,36 @@
                 }
             };
 
-            // 有通行碼才去讀資料
-            useEffect(() => { if (token) loadDataFromCloud(currentMonth); }, [currentMonth, token]);
+            // ------------------------------------------------------------------
+            // 讀取／寫入的競態防護
+            //
+            // 開 App 時會「先畫快取、同時去雲端拿新的」，所以使用者有可能在新資料
+            // 還沒回來之前就記了一筆帳。若不處理，那個較早發出、內容較舊的讀取結果
+            // 回來時會整碗蓋掉 state，把剛記好的帳從畫面上抹掉（試算表裡其實有），
+            // 使用者以為沒記到就再記一次 → 變成重複兩筆。
+            //
+            //   loadSeqRef     每次讀取 +1，只有「最新的那次」有資格套用結果
+            //   mutationGenRef 每次寫入 +1，讀取回來時對不上就代表這中間有人寫過，
+            //                  這份結果已經過期，丟掉並重讀
+            // ------------------------------------------------------------------
+            const loadSeqRef = useRef(0);
+            const mutationGenRef = useRef(0);
+            const loadPromiseRef = useRef(null);   // 目前在飛的那次讀取
+            const hasFreshRef = useRef(false);     // 這個月份是否已經拿到雲端的新資料
+            const [fromCache, setFromCache] = useState(false);
+            const fromCacheRef = useRef(false);   // 給非同步流程用，讀不到過時的 state
+
+            // 有通行碼才去讀資料。先把快取畫出來，再去雲端拿新的。
+            useEffect(() => {
+                if (!token) return;
+                const cached = readCache(currentMonth);
+                hasFreshRef.current = false;
+                // 沒有快取就清空，不要讓上個月的數字頂著新月份的標題
+                applyData(cached || {});
+                fromCacheRef.current = !!cached;
+                setFromCache(!!cached);
+                loadPromiseRef.current = loadDataFromCloud(currentMonth);
+            }, [currentMonth, token]);
 
             // 依內容調整輸入框高度。放在 effect 裡是因為送出後 input 會被程式清空，
             // 只在 onChange 調整的話高度會留在原地縮不回來。
@@ -871,22 +937,47 @@
                 return json;
             };
 
-            const loadDataFromCloud = async (monthToLoad) => {
+            const applyData = (data) => {
+                setCategories(data.categories || []);
+                setHistory(data.history || []); // 強制給予空陣列，防止 undefined
+                setGroups(data.groups || []);
+                setUnmatched(data.unmatched && data.unmatched.count > 0 ? data.unmatched : null);
+            };
+
+            // 回傳這次讀到的資料（給 processInput 等待用）；被丟棄時回傳 null
+            const loadDataFromCloud = async (monthToLoad, opts = {}) => {
+                const seq = ++loadSeqRef.current;
+                const gen = mutationGenRef.current;
                 setIsLoading(true);
                 try {
                     const data = await callBackend('getData', { month: monthToLoad });
+
+                    // 已經有更新的一次讀取出發了，這份結果不必再理會
+                    if (seq !== loadSeqRef.current) return null;
+
+                    // 這中間發生過寫入 → 這份是寫入之前的舊資料，套用會蓋掉剛記的帳
+                    if (gen !== mutationGenRef.current) return loadDataFromCloud(monthToLoad, opts);
+
                     if (data) {
-                        setCategories(data.categories || []);
-                        setHistory(data.history || []); // 強制給予空陣列，防止 undefined
-                        setGroups(data.groups || []);
-                        setUnmatched(data.unmatched && data.unmatched.count > 0 ? data.unmatched : null);
-                        setLastLog({ msg: `已讀取 ${monthToLoad} 資料`, type: 'success' });
+                        applyData(data);
+                        writeCache(monthToLoad, data);
+                        hasFreshRef.current = true;
+                        fromCacheRef.current = false;
+                        setFromCache(false);
+                        if (!opts.silent) setLastLog({ msg: `已讀取 ${monthToLoad} 資料`, type: 'success' });
                     }
+                    return data;
                 } catch (err) {
                     console.error(err);
-                    setLastLog({ msg: "讀取失敗: " + err.message, type: 'error' });
+                    if (seq !== loadSeqRef.current) return null;
+                    // 有快取墊著的話，讀取失敗不至於開天窗，訊息也講得清楚一點
+                    setLastLog({
+                        msg: (fromCacheRef.current ? "更新失敗，畫面是上次的資料: " : "讀取失敗: ") + err.message,
+                        type: 'error'
+                    });
+                    return null;
                 } finally {
-                    setIsLoading(false);
+                    if (seq === loadSeqRef.current) setIsLoading(false);
                 }
             };
 
@@ -896,13 +987,14 @@
                     setCurrentMonth(e.target.value);
                 } else {
                     // 如果是點擊重整按鈕，直接強制更新當前月份資料
-                    loadDataFromCloud(currentMonth);
+                    loadPromiseRef.current = loadDataFromCloud(currentMonth);
                 }
             };
 
             const saveCategoriesToCloud = async (newCategories, newGroupBudgets) => {
                 setCategories(newCategories);
                 const budgets = newGroupBudgets !== undefined ? newGroupBudgets : groupBudgetDraft;
+                mutationGenRef.current++;   // 讓還在飛的讀取知道自己已經過期
                 try {
                     // 將當前月份也傳送過去，讓後端可以獨立儲存
                     await callBackend('saveConfig', {
@@ -928,6 +1020,7 @@
                 // 先記住原始狀態，失敗時要還原，避免畫面顯示已刪除但雲端還在
                 const prevCategories = categories;
                 const prevHistory = history;
+                mutationGenRef.current++;   // 讓還在飛的讀取知道自己已經過期
 
                 setCategories(cats => cats.map(c => c.id === record.categoryId ? { ...c, spent: c.spent - record.amount } : c));
                 setHistory(prev => prev.filter(r => r.id !== record.id));
@@ -981,6 +1074,7 @@
                 // 先記住原始狀態，失敗時要還原
                 const prevCategories = categories;
                 const prevHistory = history;
+                mutationGenRef.current++;   // 讓還在飛的讀取知道自己已經過期
 
                 setCategories(updatedCategories);
                 // 若月份改變，從當前月份紀錄移除；否則更新
@@ -1016,15 +1110,24 @@
 
             const processInput = async (e) => {
                 e.preventDefault();
-                if (!input.trim() || isProcessing || isLoading) return;
+                if (!input.trim() || isProcessing) return;
                 setIsProcessing(true); setLastLog(null);
 
                 try {
+                    // 畫面上還是快取的類別時，先等雲端那份回來再送去拆解。
+                    // 類別可能在別台裝置被改名或刪掉，用舊的去記帳會對不到類別。
+                    // 這個等待幾乎感覺不到：拆解本身就要跑一趟 OpenAI，通常新資料早就到了。
+                    let cats = categories;
+                    if (!hasFreshRef.current && loadPromiseRef.current) {
+                        const fresh = await loadPromiseRef.current;
+                        if (fresh && fresh.categories) cats = fresh.categories;
+                    }
+
                     // 修復：不使用 toISOString 因為在台灣早上 8 點前會跨日變昨天
                     const now = new Date();
                     const currentDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 
-                    const result = await callBackend('analyze', { text: input, categories: categories, currentDate: currentDate });
+                    const result = await callBackend('analyze', { text: input, categories: cats, currentDate: currentDate });
 
                     if (!result || !result.data || !result.data.transactions || result.data.transactions.length === 0) {
                         throw new Error("無法辨識任何交易");
@@ -1032,13 +1135,13 @@
 
                     // 準備確認清單：先把 AI 給的分類對到實際存在的類別，
                     // 對不到的一律落在「其他」，讓使用者在確認畫面自行改正。
-                    const fallback = categories.find(c => c.name === '其他') || categories[0];
+                    const fallback = cats.find(c => c.name === '其他') || cats[0];
                     if (!fallback) throw new Error("目前沒有任何類別，請先到「編輯類別與預算」新增");
 
                     const pending = result.data.transactions.map(tx => {
-                        let cat = categories.find(c => c.id === tx.categoryId);
-                        if (!cat) cat = categories.find(c => c.name === tx.item);
-                        if (!cat) cat = categories.find(c => tx.item && c.name.includes(tx.item));
+                        let cat = cats.find(c => c.id === tx.categoryId);
+                        if (!cat) cat = cats.find(c => c.name === tx.item);
+                        if (!cat) cat = cats.find(c => tx.item && c.name.includes(tx.item));
                         if (!cat) cat = fallback;
                         return {
                             item: tx.item,
@@ -1061,6 +1164,7 @@
             // 使用者在確認畫面按下「確認記帳」之後才真正寫入
             const commitTransactions = async (rows) => {
                 setIsCommitting(true);
+                mutationGenRef.current++;   // 讓還在飛的讀取知道自己已經過期
                 try {
                     const newHistoryItems = [];
                     const apiPromises = [];
@@ -1107,6 +1211,8 @@
                         }
                         setInput('');
                         setPendingTx(null);
+                        // 寫完主動跟雲端對齊一次，順便把新的一筆寫進快取
+                        loadPromiseRef.current = loadDataFromCloud(currentMonth, { silent: true });
                     }
                 } catch (error) {
                     console.error(error);
@@ -1130,6 +1236,7 @@
                             unmatched={unmatched}
                             currentMonth={currentMonth}
                             isLoading={isLoading}
+                            fromCache={fromCache}
                             onRefresh={handleMonthChange}
                             onEdit={() => {
                                 setCategoriesSnapshot(categories.map(c => ({ ...c })));
@@ -1142,6 +1249,7 @@
                         {view === 'history' && <HistoryView
                             history={history}
                             currentMonth={currentMonth}
+                            isLoading={isLoading}
                             onDelete={deleteTransaction}
                             onEdit={setEditingRecord}
                         />}
@@ -1256,8 +1364,8 @@
                             <form onSubmit={processInput} className="glass-panel p-2 rounded-[24px] shadow-lg flex items-end gap-2">
                                 <div className="p-2 text-amber-500 animate-pulse"><Icons.Sparkles /></div>
                                 {/* textarea 而不是 input：Enter 是換行，送出一律要按右邊的按鈕 */}
-                                <textarea ref={inputBoxRef} rows={1} value={input} onChange={e => setInput(e.target.value)} disabled={isProcessing || isLoading} placeholder={isLoading ? "同步資料中..." : "輸入: 早餐65, 捷運25..."} className="flex-1 min-w-0 outline-none text-gray-700 placeholder-gray-400 font-medium bg-transparent py-2 resize-none overflow-y-auto leading-6 block" />
-                                <button disabled={!input.trim() || isProcessing || isLoading} className="bg-amber-500 text-white p-3.5 rounded-[20px] disabled:opacity-50 hover:bg-amber-600 transition-all active:scale-90 shadow-md shadow-amber-200/50">
+                                <textarea ref={inputBoxRef} rows={1} value={input} onChange={e => setInput(e.target.value)} disabled={isProcessing || (isLoading && categories.length === 0)} placeholder={(isLoading && categories.length === 0) ? "同步資料中..." : "輸入: 早餐65, 捷運25..."} className="flex-1 min-w-0 outline-none text-gray-700 placeholder-gray-400 font-medium bg-transparent py-2 resize-none overflow-y-auto leading-6 block" />
+                                <button disabled={!input.trim() || isProcessing || (isLoading && categories.length === 0)} className="bg-amber-500 text-white p-3.5 rounded-[20px] disabled:opacity-50 hover:bg-amber-600 transition-all active:scale-90 shadow-md shadow-amber-200/50">
                                     {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Icons.Send />}
                                 </button>
                             </form>
