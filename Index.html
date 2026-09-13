@@ -19,6 +19,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
+    <script src="frontend-api.js?v=20260913"></script>
 
     <!-- 引入漂亮的圓潤字體 Noto Sans TC -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -903,31 +904,12 @@
             // --- Cloud API Wrapper ---
             const callBackend = async (action, payload = {}) => {
                 if (!GOOGLE_SCRIPT_URL) throw new Error("請在程式碼中設定 Google Script URL");
-                const body = JSON.stringify({ action, token, ...payload });
-
-                // Google 伺服器偶爾會沒有回應，設定逾時避免畫面無限轉圈
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-                let response;
-                try {
-                    response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST', mode: 'cors', redirect: 'follow',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: body,
-                        signal: controller.signal
-                    });
-                } catch (err) {
-                    if (err.name === 'AbortError') {
-                        throw new Error(`連線逾時（超過 ${REQUEST_TIMEOUT_MS / 1000} 秒沒有回應），請確認網路後再試一次`);
-                    }
-                    throw new Error("連不上伺服器，請確認網路後再試一次");
-                } finally {
-                    clearTimeout(timer);
-                }
-
-                if (!response.ok) throw new Error("網路連線錯誤");
-                const json = await response.json();
+                const json = await BudgetApi.requestJson({
+                    baseUrl: GOOGLE_SCRIPT_URL,
+                    action,
+                    payload: { action, token, ...payload },
+                    timeoutMs: REQUEST_TIMEOUT_MS
+                });
                 if (json.status === 'error') {
                     if (json.code === 'unauthorized') {
                         clearToken('通行碼錯誤，請重新輸入');

@@ -16,6 +16,7 @@
 
 ```
 Index.html              前端（實際在跑的是 GitHub Pages 上這一份）
+frontend-api.js         前端與 Apps Script 的請求／重新導向防護
 manifest.json           加到主畫面用的設定
 icons/                  App 圖示
 apps-script/
@@ -23,6 +24,7 @@ apps-script/
   appsscript.json       Apps Script 專案設定
 test/
   test_backend.js       後端測試（模擬 Google 試算表）
+  test_frontend_api.js  前端請求與安全重試測試
 ```
 
 ## 三個部分怎麼組合
@@ -51,7 +53,7 @@ test/
 ## 開發
 
 ```bash
-npm test          # 跑後端測試（改 apps-script/Code.js 之後務必跑一次）
+npm test          # 跑後端及前端 API 測試
 ```
 
 測試會在本機模擬一個假的 Google 試算表，驗證：無編號資料不會被誤刪、類別改名不會漏帳、
