@@ -78,6 +78,8 @@ function doPost(e) {
         return _getData(request.month);
     } else if (action === 'addData') {
         return _addData(request);
+    } else if (action === 'addDataBatch') {
+        return _addDataBatch(request);
     } else if (action === 'deleteData') {
         return _deleteData(request);
     } else if (action === 'saveConfig') {
@@ -400,6 +402,11 @@ function _addData(data) {
         var sheet = _getDataSheet(ss);
         _ensureDataHeaders(sheet);
 
+        // 同一個 ID 代表同一筆記帳。逾時後重送時先核對，避免多寫一列。
+        if (data.id && _findRowById(sheet.getDataRange().getValues(), data.id) !== -1) {
+            return _jsonResponse({ status: 'success', alreadySaved: true });
+        }
+
         var entryTime = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
         var txDate = data.date ? String(data.date).replace(/-/g, '/') : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
 
@@ -419,6 +426,86 @@ function _addData(data) {
     }
 
     return _jsonResponse({ status: 'success' });
+}
+
+
+function _addDataBatch(data) {
+    var records = Array.isArray(data.records) ? data.records : [];
+    if (records.length === 0) {
+        return _jsonResponse({ status: 'error', message: '沒有要記帳的項目' });
+    }
+
+    // 先完整檢查整批資料，避免一批中有壞資料時只寫入一部分。
+    var uniqueRecords = [];
+    var inputIds = Object.create(null);
+    for (var i = 0; i < records.length; i++) {
+        var record = records[i] || {};
+        if (!record.id || String(record.id).trim() === '' || !record.item || record.amount === undefined || record.amount === null) {
+            return _jsonResponse({ status: 'error', message: '有項目缺少編號、項目或金額，整批沒有寫入' });
+        }
+        var id = String(record.id).trim();
+        var amount = _toAmount(record.amount);
+        if (amount === null) {
+            return _jsonResponse({ status: 'error', message: '有項目的金額不是有效數字，整批沒有寫入' });
+        }
+        if (inputIds[id]) continue;
+        inputIds[id] = true;
+        uniqueRecords.push({
+            id: id,
+            date: record.date ? String(record.date).replace(/-/g, '/') : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd"),
+            month: record.month || (record.date ? String(record.date).slice(0, 7) : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM")),
+            category: record.category || '',
+            categoryId: record.categoryId || '',
+            item: String(record.item).trim(),
+            amount: amount,
+            note: record.note || ''
+        });
+    }
+
+    var lock = LockService.getScriptLock();
+    try {
+        lock.waitLock(10000);
+        var sheet = _getDataSheet(SpreadsheetApp.getActiveSpreadsheet());
+        _ensureDataHeaders(sheet);
+
+        // Check IDs while holding the same lock used for appending, so simultaneous retries
+        // cannot both decide that the same transaction is missing.
+        var existingRows = sheet.getDataRange().getValues();
+        var existingIds = Object.create(null);
+        for (var r = 1; r < existingRows.length; r++) {
+            var existingId = String(existingRows[r][D_ID] || '').trim();
+            if (existingId) existingIds[existingId] = true;
+        }
+
+        var now = new Date();
+        var entryTime = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+        var newRows = [];
+        uniqueRecords.forEach(function (record) {
+            if (existingIds[record.id]) return;
+            newRows.push([
+                entryTime, record.date, record.month, record.category, record.item,
+                record.amount, record.note, record.id, record.categoryId
+            ]);
+            existingIds[record.id] = true;
+        });
+
+        if (newRows.length > 0) {
+            var firstRow = sheet.getLastRow() + 1;
+            sheet.getRange(firstRow, 1, newRows.length, DATA_HEADERS.length).setValues(newRows);
+            sheet.getRange(firstRow, 1, newRows.length, DATA_HEADERS.length).setHorizontalAlignment("left");
+            sheet.getRange(firstRow, 1, newRows.length, 1).setNumberFormat("yyyy/mm/dd HH:mm:ss");
+            SpreadsheetApp.flush();
+        }
+
+        return _jsonResponse({
+            status: 'success',
+            data: { savedIds: uniqueRecords.map(function (record) { return record.id; }), insertedCount: newRows.length }
+        });
+    } catch (e) {
+        return _jsonResponse({ status: 'error', message: '系統忙碌中，這批記帳結果待確認 (' + e.message + ')' });
+    } finally {
+        lock.releaseLock();
+    }
 }
 
 

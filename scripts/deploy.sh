@@ -19,27 +19,33 @@ fi
 
 DEPLOY_ID="$(tr -d '[:space:]' < .deployment-id)"
 
+if command -v clasp >/dev/null 2>&1; then
+  CLASP=(clasp)
+else
+  CLASP=(npx --yes @google/clasp)
+fi
+
 echo "▸ 1/4 跑測試"
 npm test --silent
 
 echo
 echo "▸ 2/4 上傳程式碼到 Apps Script"
-npx clasp push --force
+"${CLASP[@]}" push --force
 
 echo
 echo "▸ 3/4 建立新版本"
 DESC="${1:-deploy $(date '+%Y-%m-%d %H:%M')}"
-VERSION="$(npx clasp create-version "$DESC" --json 2>/dev/null | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).versionNumber' 2>/dev/null || true)"
-
-if [ -z "${VERSION:-}" ]; then
-  echo "  （無法自動取得版本號，改用最新版本）"
-  VERSION="$(npx clasp list-versions --json 2>/dev/null | node -pe 'const v=JSON.parse(require("fs").readFileSync(0,"utf8"));v[v.length-1].versionNumber' 2>/dev/null)"
+VERSION_OUTPUT="$("${CLASP[@]}" create-version "$DESC")"
+VERSION="$(printf '%s\n' "$VERSION_OUTPUT" | sed -n 's/^Created version \([0-9][0-9]*\).*$/\1/p')"
+if [ -z "$VERSION" ]; then
+  echo "  ❌ 無法從 clasp 的回覆取得版本號：$VERSION_OUTPUT"
+  exit 1
 fi
 echo "  版本 $VERSION"
 
 echo
 echo "▸ 4/4 更新線上部署（網址不變）"
-npx clasp update-deployment "$DEPLOY_ID" -V "$VERSION" -d "$DESC"
+"${CLASP[@]}" update-deployment "$DEPLOY_ID" -V "$VERSION" -d "$DESC"
 
 # 部署後一定要確認線上真的活著。曾經發生過部署完卻對所有人 403，
 # 而且沒人察覺的狀況；寧可在這裡吵，也不要讓使用者先遇到。

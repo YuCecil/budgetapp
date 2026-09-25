@@ -136,6 +136,8 @@
         const TOKEN_STORAGE_KEY = 'budgetapp_token';
         // 上次讀到的資料存在瀏覽器裡，下次開啟先用它把畫面畫出來，不用空等雲端
         const CACHE_KEY = 'budgetapp_cache_v1';
+        // 尚未收到雲端確認的記帳先留在這台裝置，重開 App 後也能用同一組 ID 安全核對
+        const PENDING_TX_KEY = 'budgetapp_pending_tx_v1';
         const CACHE_KEEP_MONTHS = 4;
         // 單次請求最長等待時間；超過就中止並提示，避免無限轉圈
         const REQUEST_TIMEOUT_MS = 30000;
@@ -169,6 +171,39 @@
                 return all[month] || null;
             } catch (e) { return null; }
         };
+
+        const readPendingState = () => {
+            try {
+                const state = JSON.parse(localStorage.getItem(PENDING_TX_KEY) || 'null');
+                if (Array.isArray(state)) return { rows: state, attempted: false, records: null };
+                if (state && Array.isArray(state.rows) && state.rows.length) {
+                    return {
+                        rows: state.rows,
+                        attempted: !!state.attempted,
+                        records: Array.isArray(state.records) ? state.records : null
+                    };
+                }
+                return null;
+            } catch (e) { return null; }
+        };
+
+        const readPendingTransactions = () => {
+            const state = readPendingState();
+            return state && state.rows.length ? state.rows : null;
+        };
+
+        const persistPendingTransactions = (rows, attempted, records = null) => {
+            try {
+                if (Array.isArray(rows) && rows.length) {
+                    localStorage.setItem(PENDING_TX_KEY, JSON.stringify({ rows, attempted: !!attempted, records }));
+                } else {
+                    localStorage.removeItem(PENDING_TX_KEY);
+                }
+                return true;
+            } catch (e) { return false; }
+        };
+
+        const makeRecordId = () => Math.random().toString(36).slice(2, 11) + Date.now().toString();
 
         const writeCache = (month, data) => {
             try {
@@ -497,7 +532,7 @@
         };
 
         // 記帳前的確認畫面：讓使用者在寫入前修正 AI 猜錯的分類
-        const ConfirmModal = ({ items, categories, onConfirm, onCancel, isSaving }) => {
+        const ConfirmModal = ({ items, categories, onConfirm, onCancel, isSaving, saveStatus }) => {
             const [rows, setRows] = useState(items);
 
             const setCat = (idx, categoryId) =>
@@ -507,11 +542,14 @@
             const total = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
             return (
-                <div className="absolute inset-0 bg-black/40 z-30 flex items-end backdrop-blur-sm" onClick={isSaving ? undefined : onCancel}>
+                <div className="absolute inset-0 bg-black/40 z-30 flex items-end backdrop-blur-sm" onClick={isSaving || saveStatus === 'unknown' ? undefined : onCancel}>
                     <div className="bg-white w-full rounded-t-3xl shadow-2xl animate-fade-in-up flex flex-col max-h-[85%]" onClick={e => e.stopPropagation()}>
                         <div className="px-6 pt-6 pb-3 flex-shrink-0">
                             <h3 className="font-bold text-lg text-amber-800">確認這幾筆</h3>
                             <p className="text-xs text-amber-500 mt-1">分類不對的話，點旁邊的選單改掉再確認</p>
+                            {saveStatus === 'unknown' && (
+                                <p className="text-xs text-red-600 mt-2 leading-relaxed">這幾筆還沒確認完成。按「再確認一次」會檢查並補齊，不會重複記帳。</p>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-6 divide-y divide-gray-100">
@@ -528,11 +566,12 @@
                                     <select
                                         value={r.categoryId}
                                         onChange={e => setCat(idx, e.target.value)}
+                                        disabled={isSaving || saveStatus === 'unknown'}
                                         className="border-2 border-amber-100 bg-amber-50/50 rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-amber-300 max-w-[7.5rem] flex-shrink-0"
                                     >
                                         {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                     </select>
-                                    <button onClick={() => removeRow(idx)} aria-label="不要記這筆"
+                                    <button onClick={() => removeRow(idx)} disabled={isSaving || saveStatus === 'unknown'} aria-label="不要記這筆"
                                         className="text-gray-200 hover:text-red-400 hover:bg-red-50 p-1.5 rounded-full transition-colors active:scale-90 flex-shrink-0">
                                         <Icons.Trash />
                                     </button>
@@ -546,11 +585,11 @@
                                 <span className="font-bold text-amber-700 font-mono">${formatNumber(total)}</span>
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={onCancel} disabled={isSaving}
-                                    className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-400 font-bold hover:bg-gray-50 hover:border-gray-200 transition-colors active:scale-95 disabled:opacity-50">取消</button>
+                                <button onClick={onCancel} disabled={isSaving || saveStatus === 'unknown'}
+                                    className="flex-1 py-3 rounded-xl border-2 border-gray-100 text-gray-400 font-bold hover:bg-gray-50 hover:border-gray-200 transition-colors active:scale-95 disabled:opacity-50">{saveStatus === 'unknown' ? '待確認' : '取消'}</button>
                                 <button onClick={() => onConfirm(rows)} disabled={isSaving || rows.length === 0}
                                     className="flex-[2] py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-200 hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-50">
-                                    {isSaving ? '記帳中...' : '確認記帳'}
+                                    {isSaving ? '記帳中...' : saveStatus === 'unknown' ? '再確認一次' : '確認記帳'}
                                 </button>
                             </div>
                         </div>
@@ -824,8 +863,13 @@
             const [lastLog, setLastLogState] = useState(null);
 
             // AI 拆解完、等待使用者確認的項目（null = 沒有待確認的）
-            const [pendingTx, setPendingTx] = useState(null);
+            const [pendingTx, setPendingTx] = useState(() => readPendingTransactions());
             const [isCommitting, setIsCommitting] = useState(false);
+            const [pendingSaveStatus, setPendingSaveStatus] = useState(() => {
+                const state = readPendingState();
+                return state ? (state.attempted ? 'unknown' : 'ready') : null;
+            });
+            const attemptedRecordsRef = useRef(readPendingState()?.records || null);
             // 群組預算與「對不到類別的花費」，皆由後端提供
             const [groups, setGroups] = useState([]);
             const [groupBudgetDraft, setGroupBudgetDraft] = useState({});
@@ -836,6 +880,16 @@
                 try { return localStorage.getItem(TOKEN_STORAGE_KEY) || ''; } catch (e) { return ''; }
             });
             const [authError, setAuthError] = useState('');
+
+            const storePendingTx = (rows, attempted = false, records = null) => {
+                const stored = persistPendingTransactions(rows, attempted, records);
+                setPendingTx(rows);
+                if (!rows) {
+                    attemptedRecordsRef.current = null;
+                    setPendingSaveStatus(null);
+                }
+                return stored;
+            };
 
             // 覆寫 setLastLog，加上 3.5 秒後自動消失的機制
             const setLastLog = (logObj) => {
@@ -1126,6 +1180,7 @@
                         if (!cat) cat = cats.find(c => tx.item && c.name.includes(tx.item));
                         if (!cat) cat = fallback;
                         return {
+                            id: makeRecordId(),
                             item: tx.item,
                             amount: Number(tx.amount) || 0,
                             date: (tx.date || currentDate).replace(/\//g, '-'),
@@ -1133,7 +1188,8 @@
                         };
                     });
 
-                    setPendingTx(pending);
+                    storePendingTx(pending);
+                    setPendingSaveStatus('ready');
 
                 } catch (error) {
                     console.error(error);
@@ -1145,60 +1201,72 @@
 
             // 使用者在確認畫面按下「確認記帳」之後才真正寫入
             const commitTransactions = async (rows) => {
+                if (isCommitting) return;
                 setIsCommitting(true);
+                setPendingSaveStatus('saving');
                 mutationGenRef.current++;   // 讓還在飛的讀取知道自己已經過期
+                const wasAttempted = pendingSaveStatus === 'unknown';
+                let requestStarted = false;
+                let confirmed = false;
                 try {
-                    const newHistoryItems = [];
-                    const apiPromises = [];
-                    let updatedCategories = categories.map(c => ({ ...c }));
-
-                    for (const tx of rows) {
-                        const targetCat = updatedCategories.find(c => c.id === tx.categoryId);
-                        if (!targetCat) continue;
-
-                        const recordId = Math.random().toString(36).slice(2, 11) + Date.now().toString();
-                        const txDate = tx.date;                       // YYYY-MM-DD
-                        const txMonth = txDate.slice(0, 7);
-
-                        if (txMonth === currentMonth) {
-                            targetCat.spent += tx.amount;
-                            newHistoryItems.push({
-                                id: recordId, date: txDate.replace(/-/g, '/'), month: currentMonth,
-                                item: tx.item, amount: tx.amount,
-                                categoryId: targetCat.id, categoryName: targetCat.name, note: '', matched: true
-                            });
+                    let records;
+                    if (wasAttempted) {
+                        // 重試沿用第一次真正送出的內容，不依賴重新載入的類別設定。
+                        const stored = readPendingState();
+                        records = stored && stored.attempted && stored.records || attemptedRecordsRef.current;
+                        if (!Array.isArray(records) || records.length !== rows.length ||
+                            !records.every((record, i) => record.id === rows[i].id)) {
+                            throw new Error('找不到上次送出的記帳內容，請先保留畫面並聯絡管理者核對試算表');
                         }
-
-                        apiPromises.push(callBackend('addData', {
-                            date: txDate, month: txMonth,
-                            category: targetCat.name, categoryId: targetCat.id,
-                            item: tx.item, amount: tx.amount, note: '', id: recordId
-                        }));
-                    }
-
-                    const apiResults = await Promise.allSettled(apiPromises);
-                    const failedCount = apiResults.filter(r => r.status === 'rejected').length;
-
-                    if (failedCount === apiPromises.length && apiPromises.length > 0) {
-                        // 全部失敗：畫面不要顯示假的成功結果
-                        setLastLog({ msg: '記帳失敗，一筆都沒有存到，請檢查網路後再試一次', type: 'error' });
                     } else {
-                        setCategories(updatedCategories);
-                        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 200));
-                        const total = rows.reduce((acc, cur) => acc + cur.amount, 0);
-                        if (failedCount > 0) {
-                            setLastLog({ msg: `有 ${failedCount} 筆沒存到，請下拉重整確認`, type: 'error' });
-                        } else {
-                            setLastLog({ msg: `記帳成功！共 ${rows.length} 筆 ($${formatNumber(total)})`, type: 'success' });
-                        }
-                        setInput('');
-                        setPendingTx(null);
-                        // 寫完主動跟雲端對齊一次，順便把新的一筆寫進快取
-                        loadPromiseRef.current = loadDataFromCloud(currentMonth, { silent: true });
+                        records = rows.map(tx => {
+                            const targetCat = categories.find(c => c.id === tx.categoryId);
+                            if (!targetCat) throw new Error('有一筆交易的類別已不存在，請取消後重新辨識');
+                            const txDate = tx.date;                 // YYYY-MM-DD
+                            return {
+                                id: tx.id, date: txDate, month: txDate.slice(0, 7),
+                                category: targetCat.name, categoryId: targetCat.id,
+                                item: tx.item, amount: tx.amount, note: ''
+                            };
+                        });
                     }
+
+                    // 必須先保留原請求，才開始寫入；重開 App 仍可用同一組 ID 核對。
+                    if (!persistPendingTransactions(rows, true, records)) {
+                        throw new Error('瀏覽器無法保存待確認的帳，請開啟正常瀏覽模式後再記帳');
+                    }
+                    attemptedRecordsRef.current = records;
+                    setPendingTx(rows);
+                    requestStarted = true;
+                    const result = await callBackend('addDataBatch', { records });
+                    const savedIds = result && result.data && Array.isArray(result.data.savedIds) ? result.data.savedIds : [];
+                    const allConfirmed = records.length > 0 && records.every(record => savedIds.includes(record.id));
+                    if (!allConfirmed) throw new Error('雲端還沒確認全部項目，請再按一次安全確認');
+                    confirmed = true;
+                    const total = records.reduce((acc, cur) => acc + cur.amount, 0);
+                    setInput('');
+                    storePendingTx(null);
+                    // 以試算表讀回的資料更新畫面，避免逾時後重試造成畫面重複計算。
+                    loadPromiseRef.current = loadDataFromCloud(currentMonth, { silent: true });
+                    const fresh = await loadPromiseRef.current;
+                    setLastLog(fresh
+                        ? { msg: `記帳成功！共 ${records.length} 筆 ($${formatNumber(total)})`, type: 'success' }
+                        : { msg: '帳已存入，但畫面還沒更新；請稍後按更新', type: 'error' });
                 } catch (error) {
                     console.error(error);
-                    setLastLog({ msg: error.message || "記帳失敗", type: 'error' });
+                    if (confirmed) {
+                        setLastLog({ msg: '帳已存入，但畫面還沒更新；請稍後按更新', type: 'error' });
+                    } else if (requestStarted) {
+                        setPendingSaveStatus('unknown');
+                        setLastLog({ msg: '尚未收到雲端確認；這幾筆已保留，按「再確認一次」即可安全核對。', type: 'error' });
+                    } else if (wasAttempted) {
+                        setPendingSaveStatus('unknown');
+                        setLastLog({ msg: error.message || '請保留畫面並核對試算表', type: 'error' });
+                    } else {
+                        persistPendingTransactions(rows, false);
+                        setPendingSaveStatus('ready');
+                        setLastLog({ msg: error.message || '請確認交易內容後再試一次', type: 'error' });
+                    }
                 } finally {
                     setIsCommitting(false);
                 }
@@ -1248,8 +1316,9 @@
                                 items={pendingTx}
                                 categories={categories}
                                 isSaving={isCommitting}
+                                saveStatus={pendingSaveStatus}
                                 onConfirm={commitTransactions}
-                                onCancel={() => setPendingTx(null)}
+                                onCancel={() => storePendingTx(null)}
                             />
                         )}
 

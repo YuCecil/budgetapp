@@ -313,10 +313,58 @@ console.log('\n【測試 6】金額防呆');
   const last = ss._sheets['記帳資料'].data[ss._sheets['記帳資料'].data.length - 1];
   check('寫入的金額是數字 65', last[5] === 65, typeof last[5] + ' ' + last[5]);
   check('寫入了類別ID', last[8] === '1770447415265', String(last[8]));
+
+  const afterFirstSave = ss._sheets['記帳資料'].data.length;
+  const duplicate = call(box.ctx, 'addData', { item: '早餐', amount: 65, month: '2026-05', category: '餐費', categoryId: '1770447415265', date: '2026-05-15', id: 'newid1' });
+  check('同一編號重送會回報已存，不再新增一列', duplicate.status === 'success' && duplicate.alreadySaved === true && ss._sheets['記帳資料'].data.length === afterFirstSave);
 }
 
 
-console.log('\n【測試 7】AI 拆解 — 模型設定、結構化輸出、壞資料防呆');
+console.log('\n【測試 7】批次記帳與逾時後安全重送');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+  const sheet = ss._sheets['記帳資料'];
+  const before = sheet.data.length;
+  const records = [
+    { id: 'batch-a', date: '2026-05-15', month: '2026-05', category: '餐費', categoryId: 'cat-food', item: '早餐', amount: 65, note: '' },
+    { id: 'batch-b', date: '2026-05-15', month: '2026-05', category: '交通', categoryId: 'cat-transit', item: '捷運', amount: 25, note: '' },
+  ];
+
+  const first = call(box.ctx, 'addDataBatch', { records });
+  check('兩筆交易一次成功寫入', first.status === 'success' && first.data.insertedCount === 2 && sheet.data.length === before + 2, JSON.stringify(first));
+  check('回覆包含兩筆固定編號', first.data.savedIds.join(',') === 'batch-a,batch-b', JSON.stringify(first.data.savedIds));
+  check('兩筆資料都寫入試算表', sheet.data.slice(-2).map(r => r[4]).join(',') === '早餐,捷運');
+
+  const retry = call(box.ctx, 'addDataBatch', { records });
+  check('逾時後用相同編號重送不會重複', retry.status === 'success' && retry.data.insertedCount === 0 && sheet.data.length === before + 2, JSON.stringify(retry));
+
+  const partialRecords = [
+    { ...records[0], id: 'partial-a' },
+    { ...records[1], id: 'partial-b' },
+  ];
+  call(box.ctx, 'addDataBatch', { records: [partialRecords[0]] });
+  const partialRetry = call(box.ctx, 'addDataBatch', { records: partialRecords });
+  check('部分已寫入時，重送只補上缺的那筆', partialRetry.status === 'success' && partialRetry.data.savedIds.join(',') === 'partial-a,partial-b' && partialRetry.data.insertedCount === 1 && sheet.data.length === before + 4, JSON.stringify(partialRetry));
+}
+
+
+console.log('\n【測試 8】批次內容有錯時整批不寫入');
+{
+  const ss = buildFixture();
+  const box = load(ss);
+  const sheet = ss._sheets['記帳資料'];
+  const before = sheet.data.length;
+  const result = call(box.ctx, 'addDataBatch', { records: [
+    { id: 'valid-row', date: '2026-05-15', month: '2026-05', category: '餐費', item: '早餐', amount: 65 },
+    { id: 'invalid-row', date: '2026-05-15', month: '2026-05', category: '餐費', item: '午餐', amount: 'abc' },
+  ] });
+  check('無效金額回報錯誤', result.status === 'error', JSON.stringify(result));
+  check('有效那筆也沒有被單獨寫入', sheet.data.length === before);
+}
+
+
+console.log('\n【測試 9】AI 拆解 — 模型設定、結構化輸出、壞資料防呆');
 {
   const ss = buildFixture();
   const box = load(ss);
@@ -392,7 +440,7 @@ console.log('\n【測試 7】AI 拆解 — 模型設定、結構化輸出、壞�
 }
 
 
-console.log('\n【測試 8】「餐費200+300+58」這種寫法');
+console.log('\n【測試 10】「餐費200+300+58」這種寫法');
 {
   const ss = buildFixture();
   const box = load(ss);
